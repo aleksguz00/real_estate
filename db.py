@@ -28,13 +28,21 @@ async def get_user_id(telegram_id: int) -> int | None:
         )
 
 
-async def save_user(telegram_id: int):
+async def save_user(telegram_id: int, username: str | None = None):
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO users (telegram_id)
-            VALUES ($1)
-            ON CONFLICT (telegram_id) DO NOTHING
-        """, telegram_id)
+            INSERT INTO users (telegram_id, username)
+            VALUES ($1, $2)
+            ON CONFLICT (telegram_id) DO UPDATE SET
+                username = EXCLUDED.username
+        """, telegram_id, username)
+
+
+async def save_phone(telegram_id: int, phone: str):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE users SET phone = $1 WHERE telegram_id = $2
+        """, phone, telegram_id)
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +63,7 @@ async def is_admin(telegram_id: int) -> bool:
 # ---------------------------------------------------------------------------
 
 async def save_property(data: dict) -> int:
-    """Сохраняет объект. При повторном парсинге (редактирование поста) — обновляет."""
+    """Сохраняет объект. При повторном парсинге (редактирование поста) - обновляет."""
     async with pool.acquire() as conn:
         return await conn.fetchval("""
             INSERT INTO properties
@@ -167,8 +175,8 @@ async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> lis
 async def save_filter(user_id: int, data: dict, is_subscription: bool = False):
     """
     Сохраняет фильтр.
-    is_subscription=False — разовый поиск.
-    is_subscription=True  — автопоиск (подписка на уведомления).
+    is_subscription=False - разовый поиск.
+    is_subscription=True  - автопоиск (подписка на уведомления).
     """
     async with pool.acquire() as conn:
         await conn.execute("""

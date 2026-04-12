@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
+    username TEXT,
+    phone TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
