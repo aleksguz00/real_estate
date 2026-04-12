@@ -8,6 +8,27 @@ from db import save_user, save_filter, get_user_id
 
 router = Router()
 
+RENT_SUBTYPES = {
+    "rent_longterm": "Долгосрочная",
+    "rent_daily":    "Посуточно",
+}
+
+SALE_SUBTYPES = {
+    "sale_apartment":  "Квартиры",
+    "sale_house":      "Дома / Виллы",
+    "sale_land":       "Земельные участки",
+    "sale_commercial": "Коммерция",
+}
+
+COMMERCIAL_SUBTYPES = {
+    "hotel":           "Отель",
+    "casino":          "Казино",
+    "restaurant":      "Ресторан / Кафе",
+    "floor":           "Целый этаж",
+    "land_commercial": "Участок под коммерцию",
+    "office":          "Офис / Торговая площадь",
+}
+
 DISTRICTS = [
     "Центр",
     "Старый Батуми",
@@ -110,19 +131,61 @@ async def choose_deal(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(lambda c: c.data.startswith("deal_"))
+@router.callback_query(FilterState.choosing_deal, lambda c: c.data.startswith("deal_"))
 async def set_deal(callback: CallbackQuery, state: FSMContext):
     deal = callback.data.replace("deal_", "")
+    await state.update_data(deal_type=deal, subtype=None)
+    await state.set_state(FilterState.choosing_subtype)
 
-    await state.update_data(deal_type=deal)
-    await state.update_data(district=[])
+    if deal == "rent":
+        subtypes = RENT_SUBTYPES
+        text = "Выберите тип аренды:"
+    else:
+        subtypes = SALE_SUBTYPES
+        text = "Выберите категорию:"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, callback_data=f"subtype_{key}")]
+        for key, label in subtypes.items()
+    ])
+    await callback.message.answer(text, reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(FilterState.choosing_subtype, lambda c: c.data.startswith("subtype_"))
+async def set_subtype(callback: CallbackQuery, state: FSMContext):
+    deal_type = callback.data.replace("subtype_", "")
+
+    if deal_type == "sale_commercial":
+        await state.update_data(deal_type=deal_type)
+        await state.set_state(FilterState.choosing_commercial)
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=label, callback_data=f"commercial_{key}")]
+            for key, label in COMMERCIAL_SUBTYPES.items()
+        ])
+        await callback.message.answer("Выберите подтип коммерции:", reply_markup=kb)
+    else:
+        await state.update_data(deal_type=deal_type, district=[])
+        await state.set_state(FilterState.choosing_district)
+        await callback.message.answer(
+            "Выберите районы (можно несколько):",
+            reply_markup=get_multi_keyboard(DISTRICTS, [], "district")
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(FilterState.choosing_commercial, lambda c: c.data.startswith("commercial_"))
+async def set_commercial(callback: CallbackQuery, state: FSMContext):
+    subtype = callback.data.replace("commercial_", "")
+    await state.update_data(subtype=subtype, district=[])
     await state.set_state(FilterState.choosing_district)
 
     await callback.message.answer(
         "Выберите районы (можно несколько):",
         reply_markup=get_multi_keyboard(DISTRICTS, [], "district")
     )
-
     await callback.answer()
 
 
@@ -182,8 +245,80 @@ async def set_floor_from(message: Message, state: FSMContext):
 @router.message(FilterState.floor_to)
 async def set_floor_to(message: Message, state: FSMContext):
     await state.update_data(floor_to=int(message.text))
+    await state.update_data(heating=[])
+    await state.set_state(FilterState.heating)
+    await message.answer(
+        "Выберите тип отопления:",
+        reply_markup=get_multi_keyboard(HEATING_TYPES, [], "heating")
+    )
+    
+    
+@router.callback_query(
+    FilterState.heating,
+    lambda c: c.data.startswith("heating_") and c.data != "heating_done"
+)
+async def toggle_heating(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected = data.get("heating", [])
+    
+    value = callback.data.replace("heating_", "")
+    
+    if value in selected:
+        selected.remove(value)
+    else:
+        selected.append(value)
+        
+    await state.update_data(heating=selected)
+    
+    await callback.message.edit_reply_markup(
+        reply_markup=get_multi_keyboard(HEATING_TYPES, selected, "heating")
+    )
+    
+    await callback.answer()
+    
+    
+@router.callback_query(FilterState.heating, lambda c: c.data == "heating_done")
+async def heating_done(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(features=[])
+    await state.set_state(FilterState.features)
+    
+    await callback.message.answer(
+        "Выберите технические детали:",
+        reply_markup=get_multi_keyboard(FEATURES, [], "features")
+    )
+    
+    await callback.answer()
+    
+    
+@router.callback_query(
+    FilterState.features,
+    lambda c: c.data.startswith("features_") and c.data != "features_done"
+)
+async def toggle_features(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected = data.get("features", [])
+    
+    value = callback.data.replace("features_", "")
+    
+    if value in selected:
+        selected.remove(value)
+    else:
+        selected.append(value)
+        
+    await state.update_data(features=selected)
+    
+    await callback.message.edit_reply_markup(
+        reply_markup=get_multi_keyboard(FEATURES, selected, "features")
+    )
+    
+    await callback.answer()
+    
+    
+@router.callback_query(FilterState.features, lambda c: c.data == "features_done")
+async def features_done(callback: CallbackQuery, state: FSMContext):
     await state.set_state(FilterState.days_depth)
-    await message.answer("Введите глубину поиска (в днях):")
+    await callback.message.answer("Введите глубину поиска (в днях):")
+    await callback.answer()
 
 
 @router.message(FilterState.days_depth)
@@ -191,19 +326,20 @@ async def set_days(message: Message, state: FSMContext):
     await state.update_data(days_depth=int(message.text))
 
     data = await state.get_data()
-
     user_id = await get_user_id(message.from_user.id)
 
-    await save_filter(user_id, (
-        user_id,
-        data["deal_type"],
-        data["district"],
-        data["area_from"],
-        data["area_to"],
-        data["floor_from"],
-        data["floor_to"],
-        data["days_depth"]
-    ))
+    await save_filter(user_id, {
+        "deal_type":  data.get("deal_type"),
+        "subtype":    data.get("subtype"),
+        "district":   data.get("district", []),
+        "area_from":  data.get("area_from"),
+        "area_to":    data.get("area_to"),
+        "floor_from": data.get("floor_from"),
+        "floor_to":   data.get("floor_to"),
+        "days_depth": data.get("days_depth"),
+        "heating":    data.get("heating", []),
+        "features":   data.get("features", []),
+    })
 
     await message.answer("✅ Фильтр сохранён!")
     await state.clear()
