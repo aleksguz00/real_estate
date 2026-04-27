@@ -1,77 +1,121 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- KAUFMAN ESTATE BOT — Структура базы данных
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Пользователи
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id          SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
-    username TEXT,
-    phone TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
+    username    TEXT,
+    full_name   TEXT,
+    phone       TEXT,
+    lang        TEXT DEFAULT 'ru',
+    created_at  TIMESTAMP DEFAULT NOW()
 );
 
--- Белый список администраторов (доступ по Telegram ID)
+-- Белый список администраторов
 CREATE TABLE IF NOT EXISTS admins (
-    id SERIAL PRIMARY KEY,
+    id          SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
-    added_at TIMESTAMP DEFAULT NOW()
+    added_at    TIMESTAMP DEFAULT NOW()
 );
 
--- Объекты недвижимости, спарсенные из каналов
+-- Объекты недвижимости
 CREATE TABLE IF NOT EXISTS properties (
-    id SERIAL PRIMARY KEY,
-    source_channel BIGINT,
-    message_id BIGINT,
+    id              SERIAL PRIMARY KEY,
+    source_channel  BIGINT,
+    message_id      BIGINT,
+    source_code     TEXT,          -- Код из объявления: 2336АК / 554РК
 
-    -- deal_type: rent_longterm | rent_daily | sale_apartment | sale_house | sale_land | sale_commercial
-    deal_type TEXT,
-    -- subtype (только для sale_commercial): hotel | casino | restaurant | floor | land_commercial | office
-    subtype TEXT,
+    -- Тип сделки и объекта
+    deal_type       TEXT,          -- rent / sale
+    property_type   TEXT,          -- apartment / house / commercial / studio
+    subtype         TEXT,          -- office / warehouse / hotel / restaurant / beauty / retail
 
-    district TEXT,
+    -- Локация
+    address         TEXT,          -- Полный адрес из поста (без скобок)
+    district        TEXT,          -- Район (определяется Яндекс Геокодером)
+    lat             FLOAT,         -- Широта (из Яндекс Геокодера)
+    lon             FLOAT,         -- Долгота (из Яндекс Геокодера)
 
-    area INTEGER,
-    floor INTEGER,
+    -- Параметры
+    rooms           TEXT,          -- Студия / 1+1 / 2+1 / 3+1 / 4+1+
+    price           INTEGER,       -- Цена в USD
+    price_season    INTEGER,       -- Цена в сезон (если есть)
+    deposit         INTEGER,       -- Депозит (если есть)
+    area            INTEGER,       -- Площадь м²
+    area_land       FLOAT,         -- Площадь участка в сотках (для домов)
+    floor           INTEGER,       -- Этаж квартиры
+    floors_total    INTEGER,       -- Этажей в доме
 
-    -- Тип отопления: центральное | электрическое | кондиционер | теплый_пол | карма
-    heating TEXT[],
-    -- Технические детали: 2_санузла | ванна | балкон | вид_на_море | парковка | духовка | посудомойка | сушилка
-    features TEXT[],
+    -- Отопление
+    heating         TEXT[],        -- центральное / теплый_пол / карма
 
-    text TEXT,
-    media_group_id TEXT,  -- для группировки фото-альбомов
+    -- Технические детали
+    features        TEXT[],        -- балкон / ванна / 2_санузла / парковка / духовка / посудомойка / вид_на_море / питомцы / кондиционер
 
-    created_at TIMESTAMP DEFAULT NOW(),
-    is_active BOOLEAN DEFAULT TRUE,
+    -- Медиа
+    photos          TEXT[],        -- Массив file_id фотографий из Telegram
+
+    -- Оригинальный текст поста (очищенный)
+    text            TEXT,
+    media_group_id  TEXT,          -- Для группировки фото-альбомов
+
+    -- Статус
+    is_active       BOOLEAN DEFAULT TRUE,   -- FALSE = Сдано / Продано
+    published_at    TIMESTAMP,              -- Дата публикации в канале
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW(),
 
     UNIQUE (source_channel, message_id)
 );
 
--- Фильтры поиска и подписки на автопоиск
+-- Фильтры поиска и подписки
 CREATE TABLE IF NOT EXISTS user_filters (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
 
-    deal_type TEXT,
-    district TEXT[],
+    deal_type   TEXT,
+    property_type TEXT[],
+    district    TEXT[],
+    address     TEXT,
 
-    area_from INTEGER,
-    area_to INTEGER,
+    rooms       TEXT[],
+    price_min   INTEGER,
+    price_max   INTEGER,
+    area_min    INTEGER,
+    area_max    INTEGER,
+    floor_min   INTEGER,
+    floor_max   INTEGER,
+    floors_total_min INTEGER,
+    floors_total_max INTEGER,
+    days_depth  INTEGER DEFAULT 30,
 
-    floor_from INTEGER,
-    floor_to INTEGER,
+    heating     TEXT[],
+    features    TEXT[],
 
-    days_depth INTEGER,
-
-    heating TEXT[],
-    features TEXT[],
-
-    -- FALSE = разовый поиск, TRUE = автопоиск (подписка на уведомления)
     is_subscription BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at  TIMESTAMP DEFAULT NOW()
 );
 
 -- Избранное
 CREATE TABLE IF NOT EXISTS favorites (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
     property_id INTEGER REFERENCES properties(id) ON DELETE CASCADE,
-    added_at TIMESTAMP DEFAULT NOW(),
+    added_at    TIMESTAMP DEFAULT NOW(),
     UNIQUE (user_id, property_id)
+);
+
+-- Просмотры и аренда (для операторов)
+CREATE TABLE IF NOT EXISTS viewings (
+    id               SERIAL PRIMARY KEY,
+    telegram_id      BIGINT NOT NULL,
+    property_id      INTEGER REFERENCES properties(id),
+    viewing_datetime TEXT,
+    rental_start     TEXT,
+    rental_end       TEXT,
+    status           TEXT DEFAULT 'Назначен',
+    created_at       TIMESTAMP DEFAULT NOW(),
+    UNIQUE (telegram_id, property_id)
 );

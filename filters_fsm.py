@@ -1,18 +1,34 @@
-from aiogram.fsm.state import StatesGroup, State
+# filters_fsm.py
+
+from aiogram.fsm.state import State, StatesGroup
+
 
 class FilterState(StatesGroup):
-    choosing_deal = State()
-    choosing_subtype = State()   # аренда: долгосрочная/посуточно; продажа: квартиры/дома/земля/коммерция
-    choosing_commercial = State() # только для sale_commercial: отель/казино/...
-    choosing_district = State()
+    # Новизна
+    choosing_fresh      = State()
+    fresh_manual_input  = State()
+    # Фильтры
+    choosing_rooms      = State()
+    choosing_area       = State()
+    area_manual_input   = State()
+    choosing_type       = State()
+    choosing_commercial = State()
+    choosing_land       = State()
+    choosing_district   = State()
+    entering_address    = State()
+    choosing_budget     = State()
+    budget_manual_input = State()
+    choosing_features   = State()
+    choosing_heating    = State()
+    # Контакт
+    waiting_contact_message = State()
+    # Бинго
+    bingo_game = State()
 
-    area_from = State()
-    area_to = State()
 
-    floor_from = State()
-    floor_to = State()
-
-    heating = State()
-    features = State()
-
-    days_depth = State()
+class AdminState(StatesGroup):
+    waiting_viewing_datetime = State()
+    waiting_rental_date      = State()
+    waiting_close_date       = State()
+    waiting_client_phone     = State()
+    waiting_broadcast        = State()

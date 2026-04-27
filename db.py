@@ -63,41 +63,90 @@ async def is_admin(telegram_id: int) -> bool:
 # ---------------------------------------------------------------------------
 
 async def save_property(data: dict) -> int:
-    """Сохраняет объект. При повторном парсинге (редактирование поста) - обновляет."""
+    """Сохранить объект недвижимости. При повторном парсинге — обновить."""
     async with pool.acquire() as conn:
         return await conn.fetchval("""
-            INSERT INTO properties
-                (source_channel, message_id, deal_type, subtype, district,
-                 area, floor, heating, features, text, media_group_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            INSERT INTO properties (
+                source_channel, message_id, source_code,
+                deal_type, property_type, subtype,
+                address, district, lat, lon,
+                rooms, price, price_season, deposit,
+                area, area_land, floor, floors_total,
+                heating, features, photos,
+                text, media_group_id,
+                is_active, published_at
+            )
+            VALUES (
+                $1, $2, $3,
+                $4, $5, $6,
+                $7, $8, $9, $10,
+                $11, $12, $13, $14,
+                $15, $16, $17, $18,
+                $19, $20, $21,
+                $22, $23,
+                $24, $25
+            )
             ON CONFLICT (source_channel, message_id) DO UPDATE SET
-                deal_type    = EXCLUDED.deal_type,
-                subtype      = EXCLUDED.subtype,
-                district     = EXCLUDED.district,
-                area         = EXCLUDED.area,
-                floor        = EXCLUDED.floor,
-                heating      = EXCLUDED.heating,
-                features     = EXCLUDED.features,
-                text         = EXCLUDED.text,
-                is_active    = TRUE
+                source_code   = EXCLUDED.source_code,
+                deal_type     = EXCLUDED.deal_type,
+                property_type = EXCLUDED.property_type,
+                address       = EXCLUDED.address,
+                district      = EXCLUDED.district,
+                lat           = EXCLUDED.lat,
+                lon           = EXCLUDED.lon,
+                rooms         = EXCLUDED.rooms,
+                price         = EXCLUDED.price,
+                price_season  = EXCLUDED.price_season,
+                deposit       = EXCLUDED.deposit,
+                area          = EXCLUDED.area,
+                floor         = EXCLUDED.floor,
+                floors_total  = EXCLUDED.floors_total,
+                heating       = EXCLUDED.heating,
+                features      = EXCLUDED.features,
+                photos        = EXCLUDED.photos,
+                text          = EXCLUDED.text,
+                is_active     = EXCLUDED.is_active,
+                updated_at    = NOW()
             RETURNING id
         """,
-            data["source_channel"],
-            data["message_id"],
+            data.get("source_channel"),
+            data.get("message_id"),
+            data.get("source_code"),
             data.get("deal_type"),
+            data.get("property_type"),
             data.get("subtype"),
+            data.get("address"),
             data.get("district"),
+            data.get("lat"),
+            data.get("lon"),
+            data.get("rooms"),
+            data.get("price"),
+            data.get("price_season"),
+            data.get("deposit"),
             data.get("area"),
+            data.get("area_land"),
             data.get("floor"),
+            data.get("floors_total"),
             data.get("heating", []),
             data.get("features", []),
+            data.get("photos", []),
             data.get("text"),
             data.get("media_group_id"),
+            data.get("is_active", True),
+            data.get("published_at"),
         )
 
 
+async def get_last_message_id(channel_id: int) -> int | None:
+    """Получить ID последнего сохранённого поста из канала."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval("""
+            SELECT MAX(message_id) FROM properties 
+            WHERE source_channel = $1
+        """, channel_id)
+
+
 async def deactivate_property(source_channel: int, message_id: int):
-    """Помечает объект неактивным (пост содержит 'Сдано!', 'Продано!' и т.п.)."""
     async with pool.acquire() as conn:
         await conn.execute("""
             UPDATE properties SET is_active = FALSE
@@ -106,10 +155,19 @@ async def deactivate_property(source_channel: int, message_id: int):
 
 
 async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> list:
-    """Поиск объектов по фильтрам с пагинацией."""
     conditions = ["is_active = TRUE"]
     params = []
     i = 1
+
+    # Поиск по конкретным ID
+    if filters.get("id_in"):
+        conditions = [f"id = ANY(${i})"]
+        params.append(filters["id_in"])
+        i += 1
+        async with pool.acquire() as conn:
+            return await conn.fetch(f"""
+                SELECT * FROM properties WHERE {' AND '.join(conditions)}
+            """, *params)
 
     if filters.get("deal_type"):
         conditions.append(f"deal_type = ${i}")
@@ -121,38 +179,53 @@ async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> lis
         params.append(filters["district"])
         i += 1
 
-    if filters.get("area_from") is not None:
+    if filters.get("price_min") is not None:
+        conditions.append(f"price >= ${i}")
+        params.append(filters["price_min"])
+        i += 1
+
+    if filters.get("price_max") is not None:
+        conditions.append(f"price <= ${i}")
+        params.append(filters["price_max"])
+        i += 1
+
+    if filters.get("area_min") is not None:
         conditions.append(f"area >= ${i}")
-        params.append(filters["area_from"])
+        params.append(filters["area_min"])
         i += 1
 
-    if filters.get("area_to") is not None:
+    if filters.get("area_max") is not None:
         conditions.append(f"area <= ${i}")
-        params.append(filters["area_to"])
+        params.append(filters["area_max"])
         i += 1
 
-    if filters.get("floor_from") is not None:
+    if filters.get("floor_min") is not None:
         conditions.append(f"floor >= ${i}")
-        params.append(filters["floor_from"])
+        params.append(filters["floor_min"])
         i += 1
 
-    if filters.get("floor_to") is not None:
+    if filters.get("floor_max") is not None:
         conditions.append(f"floor <= ${i}")
-        params.append(filters["floor_to"])
+        params.append(filters["floor_max"])
         i += 1
 
     if filters.get("days_depth") is not None:
-        conditions.append(f"created_at >= NOW() - (${i} * INTERVAL '1 day')")
+        conditions.append(f"published_at >= NOW() - (${i} * INTERVAL '1 day')")
         params.append(filters["days_depth"])
         i += 1
 
+    if filters.get("rooms"):
+        conditions.append(f"rooms = ANY(${i}::text[])")
+        params.append(filters["rooms"])
+        i += 1
+
     if filters.get("heating"):
-        conditions.append(f"heating && ${i}")
+        conditions.append(f"heating && ${i}::text[]")
         params.append(filters["heating"])
         i += 1
 
     if filters.get("features"):
-        conditions.append(f"features && ${i}")
+        conditions.append(f"features && ${i}::text[]")
         params.append(filters["features"])
         i += 1
 
@@ -163,7 +236,7 @@ async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> lis
         return await conn.fetch(f"""
             SELECT * FROM properties
             WHERE {where}
-            ORDER BY created_at DESC
+            ORDER BY published_at DESC
             LIMIT ${i} OFFSET ${i + 1}
         """, *params)
 
@@ -173,25 +246,25 @@ async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> lis
 # ---------------------------------------------------------------------------
 
 async def save_filter(user_id: int, data: dict, is_subscription: bool = False):
-    """
-    Сохраняет фильтр.
-    is_subscription=False - разовый поиск.
-    is_subscription=True  - автопоиск (подписка на уведомления).
-    """
     async with pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO user_filters
-                (user_id, deal_type, district, area_from, area_to,
-                 floor_from, floor_to, days_depth, heating, features, is_subscription)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                (user_id, deal_type, property_type, district,
+                 price_min, price_max, area_min, area_max,
+                 floor_min, floor_max, days_depth,
+                 heating, features, is_subscription)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         """,
             user_id,
             data.get("deal_type"),
+            data.get("property_type", []),
             data.get("district", []),
-            data.get("area_from"),
-            data.get("area_to"),
-            data.get("floor_from"),
-            data.get("floor_to"),
+            data.get("price_min"),
+            data.get("price_max"),
+            data.get("area_min"),
+            data.get("area_max"),
+            data.get("floor_min"),
+            data.get("floor_max"),
             data.get("days_depth"),
             data.get("heating", []),
             data.get("features", []),
@@ -200,10 +273,7 @@ async def save_filter(user_id: int, data: dict, is_subscription: bool = False):
 
 
 async def get_subscriptions_for_property(prop: dict) -> list:
-    """
-    Возвращает telegram_id пользователей, чьи подписки совпадают с новым объектом.
-    Используется при парсинге нового поста для рассылки уведомлений.
-    """
+    """Возвращает telegram_id пользователей чьи подписки совпадают с объектом."""
     async with pool.acquire() as conn:
         return await conn.fetch("""
             SELECT u.telegram_id
@@ -211,16 +281,19 @@ async def get_subscriptions_for_property(prop: dict) -> list:
             JOIN users u ON u.id = f.user_id
             WHERE f.is_subscription = TRUE
               AND (f.deal_type IS NULL OR f.deal_type = $1)
-              AND (f.district IS NULL   OR array_length(f.district, 1) IS NULL OR $2 = ANY(f.district))
-              AND (f.area_from IS NULL  OR $3 >= f.area_from)
-              AND (f.area_to IS NULL    OR $3 <= f.area_to)
-              AND (f.floor_from IS NULL OR $4 >= f.floor_from)
-              AND (f.floor_to IS NULL   OR $4 <= f.floor_to)
-              AND (f.heating IS NULL    OR array_length(f.heating, 1) IS NULL  OR f.heating && $5)
-              AND (f.features IS NULL   OR array_length(f.features, 1) IS NULL OR f.features && $6)
+              AND (f.district IS NULL OR array_length(f.district, 1) IS NULL OR $2 = ANY(f.district))
+              AND (f.price_min IS NULL OR $3 >= f.price_min)
+              AND (f.price_max IS NULL OR $3 <= f.price_max)
+              AND (f.area_min IS NULL  OR $4 >= f.area_min)
+              AND (f.area_max IS NULL  OR $4 <= f.area_max)
+              AND (f.floor_min IS NULL OR $5 >= f.floor_min)
+              AND (f.floor_max IS NULL OR $5 <= f.floor_max)
+              AND (f.heating IS NULL OR array_length(f.heating, 1) IS NULL OR f.heating && $6)
+              AND (f.features IS NULL OR array_length(f.features, 1) IS NULL OR f.features && $7)
         """,
             prop.get("deal_type"),
             prop.get("district"),
+            prop.get("price"),
             prop.get("area"),
             prop.get("floor"),
             prop.get("heating", []),
@@ -257,3 +330,64 @@ async def get_favorites(user_id: int, offset: int = 0, limit: int = 10) -> list:
             ORDER BY f.added_at DESC
             LIMIT $2 OFFSET $3
         """, user_id, limit, offset)
+
+
+# ---------------------------------------------------------------------------
+# Viewings
+# ---------------------------------------------------------------------------
+
+async def save_viewing(telegram_id: int, property_id: int, viewing_datetime: str):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO viewings (telegram_id, property_id, viewing_datetime, status)
+            VALUES ($1, $2, $3, 'Назначен')
+            ON CONFLICT (telegram_id, property_id)
+            DO UPDATE SET
+                viewing_datetime = EXCLUDED.viewing_datetime,
+                status = 'Назначен'
+        """, telegram_id, property_id, viewing_datetime)
+
+
+async def confirm_rental(telegram_id: int, property_id: int, rental_start: str):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO viewings (telegram_id, property_id, rental_start, status)
+            VALUES ($1, $2, $3, 'Арендовал')
+            ON CONFLICT (telegram_id, property_id)
+            DO UPDATE SET
+                rental_start = EXCLUDED.rental_start,
+                status = 'Арендовал'
+        """, telegram_id, property_id, rental_start)
+
+
+async def close_rental(telegram_id: int, property_id: int, rental_end: str):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE viewings
+            SET rental_end = $1, status = 'Сдал'
+            WHERE telegram_id = $2 AND property_id = $3
+        """, rental_end, telegram_id, property_id)
+
+
+# ---------------------------------------------------------------------------
+# User info
+# ---------------------------------------------------------------------------
+
+async def get_user_info(telegram_id: int) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT telegram_id, username, phone, full_name
+            FROM users WHERE telegram_id = $1
+        """, telegram_id)
+        if row:
+            return dict(row)
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# Google Sheets — логирование
+# ---------------------------------------------------------------------------
+
+async def log_to_sheets(telegram_id: int, property_id: int, data: dict):
+    # TODO: подключить gspread
+    print(f"[Sheets] user={telegram_id} prop={property_id} data={data}")
