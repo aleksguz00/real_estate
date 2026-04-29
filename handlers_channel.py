@@ -150,6 +150,7 @@ class ChannelParser:
                 return
 
             text = self._format_notification(data)
+            photos = data.get("photos", [])
 
             for sub in subscribers:
                 try:
@@ -158,12 +159,35 @@ class ChannelParser:
                         text=f"🔔 <b>Новый объект по вашим фильтрам!</b>\n\n{text}",
                         parse_mode="HTML",
                     )
+                    if photos:
+                        await self._send_photos(sub["telegram_id"], photos)
                     await asyncio.sleep(0.1)  # Антиспам
                 except Exception as e:
                     logger.error(f"Ошибка отправки уведомления {sub['telegram_id']}: {e}")
 
         except Exception as e:
             logger.error(f"Ошибка рассылки уведомлений: {e}")
+
+    async def _send_photos(self, chat_id: int, photos: list[str]):
+        """Переслать фото из канала пользователю через Telethon (сохраняет альбом)."""
+        try:
+            channel_id = None
+            msg_ids = []
+
+            for ref in photos[:10]:
+                parts = ref.split(":")
+                if len(parts) == 2:
+                    channel_id = int(parts[0])
+                    msg_ids.append(int(parts[1]))
+
+            if channel_id and msg_ids:
+                await self.client.forward_messages(
+                    entity=chat_id,
+                    messages=msg_ids,
+                    from_peer=channel_id,
+                )
+        except Exception as e:
+            logger.error(f"Ошибка пересылки фото пользователю {chat_id}: {e}")
 
     def _format_notification(self, data: dict) -> str:
         """Форматировать краткое уведомление об объекте."""
