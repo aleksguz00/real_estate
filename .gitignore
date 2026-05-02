@@ -8,3 +8,14 @@ district_cache.json
 batumi_geo_base.json
 missed_districts.txt
 *.log
+apply_cache_to_sale.py
+check_districts.py
+collect_batumi.py
+districts_check.csv
+districts_check.txt
+districts_report.txt
+enrich_districts.py
+get_streets.py
+test_2gis.py
+all_addresses.txt
+check.csv
