@@ -58,6 +58,12 @@ async def is_admin(telegram_id: int) -> bool:
         return result is not None
 
 
+async def get_admin_ids() -> list[int]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT telegram_id FROM admins")
+        return [r["telegram_id"] for r in rows]
+
+
 # ---------------------------------------------------------------------------
 # Properties
 # ---------------------------------------------------------------------------
@@ -137,6 +143,22 @@ async def save_property(data: dict) -> int:
         )
 
 
+async def update_property_geocode(prop_id: int, district: str | None, lat: float | None, lon: float | None):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE properties SET district = COALESCE($1, district), lat = $2, lon = $3 WHERE id = $4",
+            district, lat, lon, prop_id,
+        )
+
+
+async def update_property_photos(prop_id: int, photos: list[str]):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE properties SET photos = $1 WHERE id = $2",
+            photos, prop_id,
+        )
+
+
 async def get_last_message_id(channel_id: int) -> int | None:
     """Получить ID последнего сохранённого поста из канала."""
     async with pool.acquire() as conn:
@@ -152,6 +174,74 @@ async def deactivate_property(source_channel: int, message_id: int):
             UPDATE properties SET is_active = FALSE
             WHERE source_channel = $1 AND message_id = $2
         """, source_channel, message_id)
+
+
+async def get_property_ids(filters: dict) -> list[int]:
+    """Вернуть все ID объектов, подходящих под фильтры (без лимита)."""
+    conditions = ["is_active = TRUE"]
+    params = []
+    i = 1
+
+    if filters.get("deal_type"):
+        conditions.append(f"deal_type = ${i}")
+        params.append(filters["deal_type"])
+        i += 1
+    if filters.get("district"):
+        conditions.append(f"district = ANY(${i})")
+        params.append(filters["district"])
+        i += 1
+    if filters.get("price_min") is not None:
+        conditions.append(f"price >= ${i}")
+        params.append(filters["price_min"])
+        i += 1
+    if filters.get("price_max") is not None:
+        conditions.append(f"price <= ${i}")
+        params.append(filters["price_max"])
+        i += 1
+    if filters.get("area_min") is not None:
+        conditions.append(f"area >= ${i}")
+        params.append(filters["area_min"])
+        i += 1
+    if filters.get("area_max") is not None:
+        conditions.append(f"area <= ${i}")
+        params.append(filters["area_max"])
+        i += 1
+    if filters.get("floor_min") is not None:
+        conditions.append(f"floor >= ${i}")
+        params.append(filters["floor_min"])
+        i += 1
+    if filters.get("floor_max") is not None:
+        conditions.append(f"floor <= ${i}")
+        params.append(filters["floor_max"])
+        i += 1
+    if filters.get("days_depth") is not None:
+        conditions.append(f"published_at >= NOW() - (${i} * INTERVAL '1 day')")
+        params.append(filters["days_depth"])
+        i += 1
+    if filters.get("rooms"):
+        conditions.append(f"rooms = ANY(${i}::text[])")
+        params.append(filters["rooms"])
+        i += 1
+    if filters.get("property_type"):
+        conditions.append(f"property_type = ANY(${i}::text[])")
+        params.append(filters["property_type"])
+        i += 1
+    if filters.get("heating"):
+        conditions.append(f"heating && ${i}::text[]")
+        params.append(filters["heating"])
+        i += 1
+    if filters.get("features"):
+        conditions.append(f"features && ${i}::text[]")
+        params.append(filters["features"])
+        i += 1
+
+    where = " AND ".join(conditions)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"SELECT id FROM properties WHERE {where} ORDER BY published_at DESC",
+            *params,
+        )
+    return [r["id"] for r in rows]
 
 
 async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> list:
@@ -217,6 +307,11 @@ async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> lis
     if filters.get("rooms"):
         conditions.append(f"rooms = ANY(${i}::text[])")
         params.append(filters["rooms"])
+        i += 1
+
+    if filters.get("property_type"):
+        conditions.append(f"property_type = ANY(${i}::text[])")
+        params.append(filters["property_type"])
         i += 1
 
     if filters.get("heating"):
@@ -319,6 +414,23 @@ async def remove_from_favorites(user_id: int, property_id: int):
         await conn.execute("""
             DELETE FROM favorites WHERE user_id = $1 AND property_id = $2
         """, user_id, property_id)
+
+
+async def is_favorite_prop(user_id: int, property_id: int) -> bool:
+    async with pool.acquire() as conn:
+        result = await conn.fetchval(
+            "SELECT 1 FROM favorites WHERE user_id = $1 AND property_id = $2",
+            user_id, property_id
+        )
+        return result is not None
+
+
+async def get_favorites_count(user_id: int) -> int:
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM favorites f JOIN properties p ON p.id = f.property_id WHERE f.user_id = $1 AND p.is_active = TRUE",
+            user_id
+        )
 
 
 async def get_favorites(user_id: int, offset: int = 0, limit: int = 10) -> list:

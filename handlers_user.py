@@ -1,16 +1,19 @@
 # handlers_user.py
 
+import asyncio
+import logging
+import re
 import random
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InlineQuery, InlineQueryResultArticle, InputTextMessageContent
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 
 from keyboards import (
     language_kb, subscription_kb, main_menu_kb, search_dashboard_kb,
     fresh_kb, rooms_kb, area_kb, deal_type_kb, land_type_kb, commercial_type_kb,
     district_kb, budget_kb, features_kb, heating_kb, property_card_kb,
-    favorites_kb, subscriptions_kb, bingo_kb, admin_panel_kb, skip_kb,
+    favorites_kb, subscriptions_kb, admin_panel_kb, skip_kb,
     PRICE_RANGES_RENT, PRICE_RANGES_SALE, FRESHNESS_OPTIONS,
 )
 from locales import t, tl
@@ -19,9 +22,13 @@ from db import save_user, is_admin
 
 router = Router()
 
-WELCOME_PHOTO = "AgACAgIAAxkBAANcaezGoxZ_T_N7hNePlMVMkG7KS0kAAloVaxtOiWhLDvo0SciHv48BAAMCAAN5AAM7BA"
+# Паттерн старого формата хранения фото: "channel_id:msg_id"
+_CHANNEL_REF = re.compile(r"^-?\d+:\d+$")
+
+WELCOME_PHOTO = "AgACAgIAAxkBAAILMWnzz-iCdzgaAAGMWhluyR3c4qsyQQACJBdrG_DNoUvZB40620efuQEAAwIAA3cAAzsE"
 CHANNEL_USERNAME = "BatumiHome24"
 CHANNEL_URL = "https://t.me/BatumiHome24"
+OPERATOR_IDS = [7572451975, 8154802423]
 
 
 async def get_lang(state: FSMContext) -> str:
@@ -65,22 +72,59 @@ def bingo_result_text(count: int) -> str:
 
 @router.message(CommandStart())
 async def start_handler(message: Message, state: FSMContext):
+    from google_sheets import add_user_to_sheet
     await state.clear()
     await save_user(message.from_user.id, message.from_user.username)
+    await add_user_to_sheet(
+        telegram_id=message.from_user.id,
+        name=message.from_user.full_name,
+        username=message.from_user.username,
+        lang=message.from_user.language_code,
+    )
     try:
         await message.answer_photo(
             photo=WELCOME_PHOTO,
             caption="Выберите язык / Choose language:",
             reply_markup=language_kb(),
+            disable_notification=True,
         )
     except Exception:
         await message.answer(
             "Выберите язык / Choose language:",
             reply_markup=language_kb(),
+            disable_notification=True,
         )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+@router.message(Command("stats"))
+async def show_stats(message: Message):
+    from db import pool
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT
+                deal_type,
+                COALESCE(rooms, property_type) as type,
+                COUNT(*) as count
+            FROM properties
+            WHERE is_active = TRUE
+            GROUP BY deal_type, COALESCE(rooms, property_type)
+            ORDER BY deal_type, count DESC
+        """)
+        total = await conn.fetchval("SELECT COUNT(*) FROM properties WHERE is_active = TRUE")
+
+    lines = [f"📊 <b>Объектов в базе: {total}</b>\n"]
+    lines.append("🔑 <b>Аренда:</b>")
+    for row in rows:
+        if row["deal_type"] == "rent":
+            lines.append(f"  • {row['type']}: {row['count']}")
+    lines.append("\n💰 <b>Продажа:</b>")
+    for row in rows:
+        if row["deal_type"] == "sale":
+            lines.append(f"  • {row['type']}: {row['count']}")
+    await message.answer("\n".join(lines), parse_mode="HTML", disable_notification=True)
+
+
 # ВЫБОР ЯЗЫКА
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -136,9 +180,9 @@ async def _show_main_menu(message: Message, state: FSMContext, edit: bool = Fals
         except Exception:
             pass
     try:
-        await message.answer_photo(photo=WELCOME_PHOTO, caption=text, reply_markup=kb)
+        await message.answer_photo(photo=WELCOME_PHOTO, caption=text, reply_markup=kb, disable_notification=True)
     except Exception:
-        await message.answer(text, reply_markup=kb)
+        await message.answer(text, reply_markup=kb, disable_notification=True)
 
 
 @router.callback_query(F.data == "change_language")
@@ -153,6 +197,7 @@ async def change_language(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(
             t("choose_language", "ru"),
             reply_markup=language_kb(),
+            disable_notification=True,
         )
 
 
@@ -176,6 +221,7 @@ async def open_search(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         t("search_title", lang),
         reply_markup=search_dashboard_kb(data, lang),
+        disable_notification=True,
     )
 
 
@@ -222,6 +268,7 @@ async def set_fresh(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(
             t("enter_depth", lang),
             reply_markup=skip_kb("skip_fresh", lang),
+            disable_notification=True,
         )
         await callback.answer()
         return
@@ -270,7 +317,7 @@ async def fresh_manual_input(message: Message, state: FSMContext):
                 reply_markup=search_dashboard_kb(data, lang),
             )
     except ValueError:
-        await message.answer("⚠️ Введите число, например: 21")
+        await message.answer("⚠️ Введите число, например: 21", disable_notification=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -342,6 +389,7 @@ async def set_area(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(
             t("enter_area", lang),
             reply_markup=skip_kb("skip_area", lang),
+            disable_notification=True,
         )
     else:
         await state.update_data(area_from=int(val))
@@ -396,7 +444,7 @@ async def area_manual_input(message: Message, state: FSMContext):
                 reply_markup=search_dashboard_kb(data, lang),
             )
     except ValueError:
-        await message.answer(t("error_number", lang))
+        await message.answer(t("error_number", lang), disable_notification=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -540,6 +588,7 @@ async def filter_address(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         t("enter_address", lang),
         reply_markup=skip_kb("skip_address", lang),
+        disable_notification=True,
     )
 
 
@@ -667,6 +716,7 @@ async def budget_manual(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         t("enter_budget", lang),
         reply_markup=skip_kb("skip_budget", lang),
+        disable_notification=True,
     )
     await callback.answer()
 
@@ -831,8 +881,15 @@ def format_property_card(prop: dict, lang: str = "ru") -> str:
     """Форматировать карточку объекта."""
     lines = []
 
-    # Адрес
-    if prop.get("address"):
+    # Тип объекта (дом)
+    if prop.get("property_type") == "house":
+        lines.append("🏡 Дом")
+
+    # Адрес с геоссылкой
+    if prop.get("lat") and prop.get("lon"):
+        maps_url = f"https://yandex.ru/maps/?pt={prop['lon']},{prop['lat']}&z=17"
+        lines.append(f"📍 <a href='{maps_url}'>{prop['address']}</a>")
+    elif prop.get("address"):
         lines.append(f"📍 {prop['address']}")
 
     # Параметры
@@ -846,6 +903,8 @@ def format_property_card(prop: dict, lang: str = "ru") -> str:
         info.append(f"🏢 {floor_str} эт.")
     if prop.get("area"):
         info.append(f"📐 {prop['area']} м²")
+    if prop.get("area_land"):
+        info.append(f"🌿 Участок: {prop['area_land']} сот.")
     if info:
         lines.append(" | ".join(info))
 
@@ -858,10 +917,6 @@ def format_property_card(prop: dict, lang: str = "ru") -> str:
             price_str += f"\n💳 Депозит: ${prop['deposit']:,}"
         lines.append(price_str)
 
-    # Оплата за первый и последний месяц
-    if prop.get("deal_type") == "rent":
-        lines.append("💳 Оплата за первый и последний месяц")
-
     # Цена в сезон
     if prop.get("price_season"):
         lines.append(f"☀️ Цена в сезон: ${prop['price_season']:,}/мес")
@@ -869,15 +924,22 @@ def format_property_card(prop: dict, lang: str = "ru") -> str:
     # Удобства
     features = prop.get("features", [])
     if features:
-        feat_map = {
-            "балкон": "Балкон", "ванна": "Ванна", "2_санузла": "2 санузла",
-            "парковка": "Парковка", "духовка": "Духовой шкаф",
-            "посудомойка": "Посудомойка", "вид_на_море": "Вид на море/горы",
-            "питомцы": "Питомцы ✓", "кондиционер": "Кондиционер",
-            "2_кондиционера": "2 кондиционера+",
+        feat_icons = {
+            "балкон": "🟢 Балкон",
+            "духовка": "🟢 Духовка",
+            "посудомойка": "🟢 Посудомойка",
+            "ванна": "🛁 Ванна",
+            "2_санузла": "🟢 2 санузла",
+            "парковка": "🚘 Парковка",
+            "питомцы": "🐶 Питомцы",
+            "вид_на_море": "🌊 Вид на море",
+            "вид_на_горы": "⛰️ Вид на горы",
+            "вид_на_море_горы": "🌊 Вид на море/горы",
+            "кондиционер": "🟢 Кондиционер",
+            "2_кондиционера": "🟢 2 кондиционера+",
         }
-        feat_list = [feat_map.get(f, f) for f in features]
-        lines.append("✅ " + "  ✅ ".join(feat_list))
+        feat_list = [feat_icons.get(f, f) for f in features]
+        lines.append("  ".join(feat_list))
 
     # Отопление
     heating = prop.get("heating", [])
@@ -887,6 +949,13 @@ def format_property_card(prop: dict, lang: str = "ru") -> str:
         }
         heat_list = [heat_map.get(h, h) for h in heating]
         lines.append(f"🔥 {', '.join(heat_list)}")
+
+    # ID и дата
+    source_code = prop.get("source_code", "")
+    published_at = prop.get("published_at")
+    date_str = published_at.strftime("%d.%m.%Y") if published_at else "—"
+    if source_code:
+        lines.append(f"─────────────\nID: {source_code}   {date_str}")
 
     return "\n".join(lines)
 
@@ -924,6 +993,7 @@ _FEATURES_TO_DB = {
 }
 
 
+
 def build_filters_from_state(data: dict) -> dict:
     """Собрать фильтры из FSM данных."""
     filters = {}
@@ -942,6 +1012,9 @@ def build_filters_from_state(data: dict) -> dict:
         if isinstance(rooms, str):
             rooms = [rooms]
         filters["rooms"] = rooms
+
+    if data.get("area_from"):
+        filters["area_min"] = data["area_from"]
 
     if data.get("features"):
         filters["features"] = [
@@ -990,19 +1063,18 @@ async def filter_show(callback: CallbackQuery, state: FSMContext):
 
     filters = build_filters_from_state(data)
 
-    from db import get_properties
-    props = await get_properties(filters, limit=10)
+    from db import get_property_ids, get_properties
+    prop_ids = await get_property_ids(filters)
 
-    if not props:
-        await callback.message.answer(t("no_results", lang))
+    if not prop_ids:
+        await callback.message.answer(t("no_results", lang), disable_notification=True)
         return
 
-    # Сохраняем результаты в FSM для пагинации
-    prop_ids = [p["id"] for p in props]
     await state.update_data(search_results=prop_ids, search_index=0)
 
-    # Показываем первый объект
-    await show_property_card(callback.message, state, props[0], 1, len(props), lang)
+    props = await get_properties({"id_in": [prop_ids[0]]}, limit=1)
+    if props:
+        await show_property_card(callback.message, state, props[0], 1, len(prop_ids), lang)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1010,21 +1082,186 @@ async def filter_show(callback: CallbackQuery, state: FSMContext):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "favorites")
-async def show_favorites(callback: CallbackQuery):
+async def show_favorites(callback: CallbackQuery, state: FSMContext):
+    from db import get_user_id, get_favorites, get_favorites_count
+    data = await state.get_data()
+    lang = data.get("lang", "ru")
     await callback.answer()
-    await callback.message.answer(
-        "⭐️ <b>Избранное</b>\n\n<i>Здесь появятся сохранённые объекты.</i>"
-    )
+
+    user_id = await get_user_id(callback.from_user.id)
+    if not user_id:
+        await callback.message.answer("⭐️ Избранное пусто.", disable_notification=True)
+        return
+
+    total = await get_favorites_count(user_id)
+    if total == 0:
+        await callback.message.answer("⭐️ <b>Избранное пусто.</b>\n\nДобавляйте объекты кнопкой ⭐️ В избранное.", disable_notification=True)
+        return
+
+    props = await get_favorites(user_id, offset=0, limit=1)
+    if props:
+        await state.update_data(fav_index=0)
+        await show_favorite_card(callback.message, state, props[0], 1, total, lang)
 
 
-@router.callback_query(F.data.startswith("fav_") & ~F.data.startswith("fav_remove_"))
-async def toggle_favorite(callback: CallbackQuery):
-    await callback.answer("⭐️ Добавлено в избранное!")
+async def show_favorite_card(message, state: FSMContext, prop, current: int, total: int, lang: str):
+    from db import get_user_id
+    admin   = await is_admin(message.chat.id)
+    text = format_property_card(dict(prop), lang)
+    kb = favorites_kb(current=current, total=total, prop_id=prop["id"], lang=lang)
+    await _send_photos(message, prop)
+    await message.answer(text, reply_markup=kb, disable_web_page_preview=True, disable_notification=True)
+
+
+async def _send_photos_to(bot, chat_id, prop):
+    """Отправить все фото объекта в указанный chat_id."""
+    photos   = prop.get("photos", []) or []
+    refs     = [str(p) for p in photos if _CHANNEL_REF.match(str(p))]
+    file_ids = [str(p) for p in photos if not _CHANNEL_REF.match(str(p))]
+
+    logger.info(f"[photos_to] chat={chat_id} prop={prop.get('id')} refs={refs}")
+
+    album_refs = refs
+    if len(refs) <= 1:
+        src_ch = prop.get("source_channel")
+        msg_id = prop.get("message_id")
+        if src_ch and msg_id:
+            try:
+                from handlers_channel import parser as _parser
+                if _parser:
+                    full = await _parser.get_album_photo_ids(int(src_ch), int(msg_id))
+                    logger.info(f"[photos_to] telethon album: {full}")
+                    if full:
+                        album_refs = full
+            except Exception as _e:
+                logger.warning(f"[photos] Telethon: {_e}")
+
+    if album_refs:
+        ch_id   = int(album_refs[0].split(":")[0])
+        msg_ids = [int(r.split(":")[1]) for r in album_refs]
+        logger.info(f"[photos_to] copy_messages → chat={chat_id} from={ch_id} msgs={msg_ids}")
+        try:
+            await bot.copy_messages(
+                chat_id=chat_id,
+                from_chat_id=ch_id,
+                message_ids=msg_ids,
+                remove_caption=True,
+                disable_notification=True,
+            )
+            logger.info(f"[photos_to] copy_messages OK")
+            return
+        except Exception as _e:
+            logger.warning(f"[photos] copy_messages FAILED: {_e}")
+            # Фолбэк: forward_messages сохраняет атрибуцию, но надёжнее
+            try:
+                await bot.forward_messages(
+                    chat_id=chat_id,
+                    from_chat_id=ch_id,
+                    message_ids=msg_ids,
+                    disable_notification=True,
+                )
+                logger.info(f"[photos_to] forward_messages OK")
+                return
+            except Exception as _e2:
+                logger.warning(f"[photos] forward_messages FAILED: {_e2}")
+
+    if file_ids:
+        if len(file_ids) == 1:
+            await bot.send_photo(chat_id=chat_id, photo=file_ids[0], disable_notification=True)
+        else:
+            await bot.send_media_group(
+                chat_id=chat_id,
+                media=[InputMediaPhoto(media=fid) for fid in file_ids],
+                disable_notification=True,
+            )
+
+
+async def _send_photos(message, prop):
+    await _send_photos_to(message.bot, message.chat.id, prop)
+
+
+@router.callback_query(F.data.startswith("fav_") & ~F.data.startswith("fav_remove_") & ~F.data.startswith("fav_prev") & ~F.data.startswith("fav_next"))
+async def toggle_favorite(callback: CallbackQuery, state: FSMContext):
+    from db import get_user_id, add_to_favorites, remove_from_favorites, is_favorite_prop
+    data = await state.get_data()
+    lang = data.get("lang", "ru")
+    prop_id = int(callback.data.replace("fav_", ""))
+
+    user_id = await get_user_id(callback.from_user.id)
+    if not user_id:
+        await callback.answer("Ошибка: пользователь не найден", show_alert=True)
+        return
+
+    already = await is_favorite_prop(user_id, prop_id)
+    if already:
+        await remove_from_favorites(user_id, prop_id)
+        await callback.answer("🗑 Удалено из избранного")
+    else:
+        await add_to_favorites(user_id, prop_id)
+        await callback.answer("⭐️ Добавлено в избранное!")
 
 
 @router.callback_query(F.data.startswith("fav_remove_"))
-async def remove_favorite(callback: CallbackQuery):
+async def remove_favorite(callback: CallbackQuery, state: FSMContext):
+    from db import get_user_id, remove_from_favorites, get_favorites, get_favorites_count
+    data = await state.get_data()
+    lang = data.get("lang", "ru")
+    prop_id = int(callback.data.replace("fav_remove_", ""))
+
+    user_id = await get_user_id(callback.from_user.id)
+    if user_id:
+        await remove_from_favorites(user_id, prop_id)
+
     await callback.answer("🗑 Удалено из избранного")
+
+    total = await get_favorites_count(user_id) if user_id else 0
+    if total == 0:
+        await callback.message.answer("⭐️ Избранное теперь пусто.", disable_notification=True)
+        return
+
+    index = max(0, data.get("fav_index", 0) - 1)
+    await state.update_data(fav_index=index)
+    props = await get_favorites(user_id, offset=index, limit=1)
+    if props:
+        await show_favorite_card(callback.message, state, props[0], index + 1, total, lang)
+
+
+@router.callback_query(F.data == "fav_prev")
+async def fav_prev(callback: CallbackQuery, state: FSMContext):
+    from db import get_user_id, get_favorites, get_favorites_count
+    data = await state.get_data()
+    lang = data.get("lang", "ru")
+    index = data.get("fav_index", 0)
+    if index <= 0:
+        await callback.answer()
+        return
+    index -= 1
+    await state.update_data(fav_index=index)
+    user_id = await get_user_id(callback.from_user.id)
+    total = await get_favorites_count(user_id)
+    props = await get_favorites(user_id, offset=index, limit=1)
+    await callback.answer()
+    if props:
+        await show_favorite_card(callback.message, state, props[0], index + 1, total, lang)
+
+
+@router.callback_query(F.data == "fav_next")
+async def fav_next(callback: CallbackQuery, state: FSMContext):
+    from db import get_user_id, get_favorites, get_favorites_count
+    data = await state.get_data()
+    lang = data.get("lang", "ru")
+    index = data.get("fav_index", 0)
+    user_id = await get_user_id(callback.from_user.id)
+    total = await get_favorites_count(user_id)
+    if index >= total - 1:
+        await callback.answer()
+        return
+    index += 1
+    await state.update_data(fav_index=index)
+    props = await get_favorites(user_id, offset=index, limit=1)
+    await callback.answer()
+    if props:
+        await show_favorite_card(callback.message, state, props[0], index + 1, total, lang)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1039,6 +1276,7 @@ async def show_subscriptions(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         f"🔔 <b>{t('subscriptions_title', lang)}</b>\n\n{t('subscriptions_text', lang)}",
         reply_markup=subscriptions_kb(has_active=False, lang=lang),
+        disable_notification=True,
     )
 
 
@@ -1069,7 +1307,8 @@ async def contact_us(callback: CallbackQuery, state: FSMContext):
     await state.set_state(FilterState.waiting_contact_message)
     await callback.answer()
     await callback.message.answer(
-        "✉️ <b>Написать нам</b>\n\nОпишите что вы ищете — менеджер свяжется в течение 15 минут 👇"
+        "✉️ <b>Написать нам</b>\n\nОпишите что вы ищете — менеджер свяжется в течение 15 минут 👇",
+        disable_notification=True,
     )
 
 
@@ -1079,7 +1318,7 @@ async def contact_from_card(callback: CallbackQuery, state: FSMContext):
     await state.update_data(contact_prop_id=prop_id)
     await state.set_state(FilterState.waiting_contact_message)
     await callback.answer()
-    await callback.message.answer("✉️ Напишите ваш вопрос — менеджер ответит в течение 15 минут 👇")
+    await callback.message.answer("✉️ Напишите ваш вопрос — менеджер ответит в течение 15 минут 👇", disable_notification=True)
 
 
 @router.message(FilterState.waiting_contact_message)
@@ -1094,23 +1333,60 @@ async def handle_contact_message(message: Message, state: FSMContext):
         f"👤 Имя: {user.full_name}\n"
         f"🔗 Username: @{user.username or '—'}\n"
         f"🆔 TG ID: <code>{user.id}</code>\n"
+        f"\n💬 Сообщение:\n{message.text}"
     )
+
+    prop = None
     if prop_id and prop_id != "0":
-        staff_text += f"🏠 Объект: #{prop_id}\n"
-    staff_text += f"\n💬 Сообщение:\n{message.text}"
+        from db import pool
+        async with pool.acquire() as conn:
+            prop = await conn.fetchrow("SELECT * FROM properties WHERE id=$1", int(prop_id))
 
-    staff_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Подтвердить просмотр", callback_data=f"op_confirm_{user.id}_{prop_id or 0}"),
-            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"op_decline_{user.id}"),
-        ]
-    ])
+    for op_id in OPERATOR_IDS:
+        await message.bot.send_message(
+            chat_id=op_id,
+            text=staff_text,
+            disable_notification=True,
+        )
 
-    # TODO: раскомментировать после настройки STAFF_GROUP_ID
-    # await message.bot.send_message(STAFF_GROUP_ID, staff_text, reply_markup=staff_kb)
+        if prop:
+            await _send_photos_to(message.bot, op_id, prop)
+
+            card_text = format_property_card(dict(prop), "ru")
+            op_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✅ Подтвердить просмотр",
+                        callback_data=f"op_confirm_{user.id}_{prop_id}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="💬 Ответить клиенту",
+                        url=f"tg://user?id={user.id}",
+                    ),
+                    InlineKeyboardButton(
+                        text="📞 Написать владельцу",
+                        callback_data=f"op_owner_{prop_id}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🔍 Проверить объект",
+                        callback_data=f"op_check_{prop_id}",
+                    ),
+                ],
+            ])
+            await message.bot.send_message(
+                chat_id=op_id,
+                text=card_text,
+                reply_markup=op_kb,
+                disable_notification=True,
+                disable_web_page_preview=True,
+            )
 
     await state.set_state(None)
-    await message.answer("✅ Ваш запрос отправлен!\nМенеджер свяжется с вами в течение 15 минут.")
+    await message.answer("✅ Ваш запрос отправлен!\nМенеджер свяжется с вами в течение 15 минут.", disable_notification=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1125,13 +1401,13 @@ async def admin_panel(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lang = data.get("lang", "ru")
     await callback.answer()
-    await callback.message.answer("⚙️ <b>Админпанель</b>", reply_markup=admin_panel_kb(lang))
+    await callback.message.answer("⚙️ <b>Админпанель</b>", reply_markup=admin_panel_kb(lang), disable_notification=True)
 
 
 @router.callback_query(F.data == "admin_requests")
 async def admin_requests(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("📋 <b>Заявки</b>\n\n<i>Здесь появятся входящие заявки от клиентов.</i>")
+    await callback.message.answer("📋 <b>Заявки</b>\n\n<i>Здесь появятся входящие заявки от клиентов.</i>", disable_notification=True)
 
 
 @router.callback_query(F.data == "admin_search")
@@ -1139,118 +1415,103 @@ async def admin_search(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.answer("🔍 Подбор объектов для клиента:", reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.answer("🔍 Подбор объектов для клиента:", reply_markup=search_dashboard_kb(data, lang), disable_notification=True)
 
 
 @router.callback_query(F.data == "admin_stats")
 async def admin_stats(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("📊 <b>Статистика</b>\n\n<i>Будет доступна после подключения базы данных.</i>")
+    await callback.message.answer("📊 <b>Статистика</b>\n\n<i>Будет доступна после подключения базы данных.</i>", disable_notification=True)
 
 
 @router.callback_query(F.data == "admin_clients")
 async def admin_clients(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("👥 <b>Клиенты</b>\n\n<i>База клиентов появится после подключения базы данных.</i>")
+    await callback.message.answer("👥 <b>Клиенты</b>\n\n<i>База клиентов появится после подключения базы данных.</i>", disable_notification=True)
 
 
 @router.callback_query(F.data == "admin_broadcast")
 async def admin_broadcast(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.set_state(AdminState.waiting_broadcast)
-    await callback.message.answer("📤 Введите текст рассылки:")
+    await callback.message.answer("📤 Введите текст рассылки:", disable_notification=True)
 
 
 @router.message(AdminState.waiting_broadcast)
 async def handle_broadcast(message: Message, state: FSMContext):
     await state.set_state(None)
     # TODO: разослать всем пользователям
-    await message.answer("✅ Рассылка запущена!")
+    await message.answer("✅ Рассылка запущена!", disable_notification=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# БАТУМСКОЕ БИНГО
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.callback_query(F.data == "bingo")
-async def start_bingo(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "ru")
-    ad = random.choice(BINGO_ADS)
-    await state.update_data(bingo_checked=[], bingo_ad=ad)
-    await state.set_state(FilterState.bingo_game)
-    await callback.answer()
-    items = tl("bingo_items", lang)
-    items_text = "\n".join(f"☐ {item}" for item in items)
-    await callback.message.answer(
-        f"{t('bingo_title', lang)}\n\n📋 <i>{ad}</i>\n\n{t('bingo_find', lang)}\n\n{items_text}",
-        reply_markup=bingo_kb([], lang),
-    )
 
 
-@router.callback_query(FilterState.bingo_game, F.data.startswith("bingo_") & ~F.data.endswith("_result"))
-async def toggle_bingo(callback: CallbackQuery, state: FSMContext):
-    idx = int(callback.data.replace("bingo_", ""))
-    data = await state.get_data()
-    lang = data.get("lang", "ru")
-    checked = data.get("bingo_checked", [])
-    if idx in checked:
-        checked.remove(idx)
-    else:
-        checked.append(idx)
-    await state.update_data(bingo_checked=checked)
-    ad = data.get("bingo_ad", "")
-    items = tl("bingo_items", lang)
-    items_text = "\n".join(
-        f"{'✅' if i in checked else '☐'} {item}"
-        for i, item in enumerate(items)
-    )
-    await callback.message.edit_text(
-        f"{t('bingo_title', lang)}\n\n📋 <i>{ad}</i>\n\n{t('bingo_find', lang)}\n\n{items_text}",
-        reply_markup=bingo_kb(checked, lang),
-    )
-    await callback.answer()
 
 
-@router.callback_query(FilterState.bingo_game, F.data == "bingo_result")
-async def bingo_result(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("lang", "ru")
-    checked = data.get("bingo_checked", [])
-    await state.set_state(None)
-    await callback.answer()
-    await callback.message.answer(f"🎰 <b>Результат:</b>\n\n{bingo_result_text(len(checked))}")
+logger = logging.getLogger(__name__)
+
+
+async def _resolve_file_ids(bot, album_refs: list[str]) -> list[str]:
+    """
+    Пересылает фото альбома в STORAGE_CHAT_ID, забирает file_id,
+    удаляет сообщения из хранилища. Возвращает список file_id в том же порядке.
+    """
+    from config import STORAGE_CHAT_ID
+    if not STORAGE_CHAT_ID or not album_refs:
+        logger.warning("[photos] STORAGE_CHAT_ID не задан или пустой album_refs")
+        return []
+
+    tasks = [
+        bot.forward_message(
+            chat_id=STORAGE_CHAT_ID,
+            from_chat_id=int(r.split(":")[0]),
+            message_id=int(r.split(":")[1]),
+            disable_notification=True,
+        )
+        for r in album_refs
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    file_ids: list[str] = []
+    storage_ids: list[int] = []
+    for ref, res in zip(album_refs, results):
+        if isinstance(res, Exception):
+            logger.warning(f"[photos] forward {ref} → {res}")
+            continue
+        storage_ids.append(res.message_id)
+        if res.photo:
+            file_ids.append(res.photo[-1].file_id)
+
+    logger.info(f"[photos] resolved {len(file_ids)}/{len(album_refs)} file_ids via storage")
+
+    if storage_ids:
+        try:
+            await bot.delete_messages(chat_id=STORAGE_CHAT_ID, message_ids=storage_ids)
+        except Exception as e:
+            logger.warning(f"[photos] delete from storage: {e}")
+
+    return file_ids
 
 
 async def show_property_card(message, state: FSMContext, prop, current: int, total: int, lang: str):
     """Показать карточку объекта."""
-    admin = await is_admin(message.chat.id)
+    from db import get_user_id, is_favorite_prop
+    admin   = await is_admin(message.chat.id)
+    user_id = await get_user_id(message.chat.id)
+    is_fav  = await is_favorite_prop(user_id, prop["id"]) if user_id else False
 
     text = format_property_card(dict(prop), lang)
     kb = property_card_kb(
         current=current,
         total=total,
         prop_id=prop["id"],
+        is_favorite=is_fav,
         is_admin=admin,
         lang=lang,
     )
 
-    # Пересылаем фото из канала
-    photos = prop.get("photos", [])
-    if photos:
-        try:
-            first_photo = str(photos[0])
-            if ":" in first_photo:
-                channel_id, msg_id = first_photo.split(":")
-                await message.bot.forward_message(
-                    chat_id=message.chat.id,
-                    from_chat_id=int(channel_id),
-                    message_id=int(msg_id),
-                )
-        except Exception as e:
-            pass
-
-    await message.answer(text, reply_markup=kb)
+    await _send_photos(message, prop)
+    await message.answer(text, reply_markup=kb, disable_web_page_preview=True, disable_notification=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1302,3 +1563,129 @@ async def card_next(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "card_count")
 async def card_count(callback: CallbackQuery):
     await callback.answer()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INLINE — пересылка объекта клиенту
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.inline_query(F.query.startswith("prop_"))
+async def inline_property(query: InlineQuery):
+    try:
+        prop_id = int(query.query.replace("prop_", ""))
+    except ValueError:
+        await query.answer([])
+        return
+
+    from db import pool
+    async with pool.acquire() as conn:
+        prop = await conn.fetchrow("SELECT * FROM properties WHERE id=$1", prop_id)
+
+    if not prop:
+        await query.answer([])
+        return
+
+    prop = dict(prop)
+    text = format_property_card(prop, "ru")
+
+    address = prop.get("address") or "Объект"
+    rooms = prop.get("rooms") or ""
+    price = prop.get("price")
+    deal = prop.get("deal_type", "")
+    price_str = f"${price:,}" + ("/мес" if deal == "rent" else "") if price else ""
+    description = ", ".join(filter(None, [rooms, price_str]))
+
+    result = InlineQueryResultArticle(
+        id=str(prop_id),
+        title=f"🏠 {address}",
+        description=description,
+        input_message_content=InputTextMessageContent(
+            message_text=text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        ),
+    )
+
+    await query.answer([result], cache_time=1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ОПЕРАТОРЫ — подтверждение / отклонение просмотра
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("op_confirm_"))
+async def op_confirm_viewing(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_")
+    client_id = int(parts[2])
+    prop_id = int(parts[3]) if parts[3] != "0" else None
+
+    await state.update_data(
+        confirm_client_id=client_id,
+        confirm_prop_id=prop_id,
+    )
+    await state.set_state(AdminState.waiting_viewing_datetime)
+    await callback.answer()
+    await callback.message.answer(
+        "📅 Введите дату и время просмотра:\n"
+        "Например: 15.05.2026 в 14:00",
+        disable_notification=True,
+    )
+
+
+@router.message(AdminState.waiting_viewing_datetime)
+async def save_viewing_datetime(message: Message, state: FSMContext):
+    data = await state.get_data()
+    client_id = data.get("confirm_client_id")
+    prop_id = data.get("confirm_prop_id")
+    datetime_str = message.text.strip()
+
+    from db import save_viewing
+    await save_viewing(client_id, prop_id, datetime_str)
+
+    from google_sheets import add_viewing_to_sheet
+    await add_viewing_to_sheet(client_id, prop_id, datetime_str)
+
+    await message.bot.send_message(
+        chat_id=client_id,
+        text=f"✅ Просмотр подтверждён!\n📅 {datetime_str}\n\nДо встречи! 🏠",
+        disable_notification=False,
+    )
+
+    await state.set_state(None)
+    await message.answer("✅ Просмотр записан и клиент уведомлён!", disable_notification=True)
+
+
+@router.callback_query(F.data.startswith("op_decline_"))
+async def op_decline_viewing(callback: CallbackQuery):
+    client_id = int(callback.data.split("_")[2])
+    await callback.answer("Отклонено")
+    await callback.bot.send_message(
+        chat_id=client_id,
+        text=(
+            "😔 К сожалению, по данному объекту просмотр невозможен.\n"
+            "Наш менеджер подберёт вам другие варианты."
+        ),
+    )
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+
+@router.callback_query(F.data.startswith("op_owner_"))
+async def op_owner(callback: CallbackQuery):
+    prop_id = callback.data.split("_")[2]
+    await callback.answer()
+    await callback.message.answer(
+        f"📞 База собственников пока не подключена.\n"
+        f"Объект #{prop_id}",
+        disable_notification=True,
+    )
+
+
+@router.callback_query(F.data.startswith("op_check_"))
+async def op_check(callback: CallbackQuery):
+    prop_id = callback.data.split("_")[2]
+    await callback.answer()
+    await callback.message.answer(
+        f"🔍 База собственников пока не подключена.\n"
+        f"Объект #{prop_id}",
+        disable_notification=True,
+    )

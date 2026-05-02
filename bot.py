@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+import sys
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -19,7 +21,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def check_single_instance():
+    """Проверяет что бот не запущен в другом процессе."""
+    import subprocess
+    result = subprocess.run(
+        ['pgrep', '-f', 'bot.py'],
+        capture_output=True, text=True
+    )
+    pids = [p for p in result.stdout.strip().split('\n') if p and p != str(os.getpid())]
+    if pids:
+        print(f"❌ Бот уже запущен (PID: {', '.join(pids)}). Остановите его сначала.")
+        sys.exit(1)
+
+
 async def main():
+    check_single_instance()
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),

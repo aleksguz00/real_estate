@@ -9,11 +9,14 @@ from locales import t, tl
 # ─────────────────────────────────────────────────────────────────────────────
 
 DISTRICTS = [
-    "Старый Батуми", "Химшиашвили", "Новый Бульвар", "Руставели",
-    "Багратиони", "Агмашенебели", "Джавахишвили", "Тамар / БНЗ",
-    "Бони Городок", "Аэропорт",
-    "Махинджаури", "Чакви", "Гонио", "Квариати",
+    "Старый Батуми", "Химшиашвили", "Аэропорт", "Новый Бульвар",
+    "Руставели", "Джавахишвили", "Багратиони", "Агмашенебели",
+    "Тамар", "Бони Городок", "Кахабери", "Махинджаури",
 ]
+
+DISTRICTS_EN = {
+    "Новый Бульвар": "New Boulevard",
+}
 
 PRICE_RANGES_RENT = [
     ("rent_1", "до $350"),    ("rent_2", "$350 — $500"),
@@ -85,7 +88,6 @@ def main_menu_kb(lang: str = "ru", is_admin: bool = False) -> InlineKeyboardMark
         [InlineKeyboardButton(text=t("btn_favorites", lang),     callback_data="favorites")],
         [InlineKeyboardButton(text=t("btn_subscriptions", lang), callback_data="subscriptions")],
         [InlineKeyboardButton(text=t("btn_contact", lang),       callback_data="contact_us")],
-        [InlineKeyboardButton(text=t("btn_game", lang),          callback_data="bingo")],
     ]
     if is_admin:
         rows.append([InlineKeyboardButton(text=t("btn_admin", lang), callback_data="admin_panel")])
@@ -273,7 +275,8 @@ def district_kb(selected: list[str], lang: str = "ru") -> InlineKeyboardMarkup:
     rows = []
     for district in DISTRICTS:
         mark = "✅ " if district in selected else ""
-        rows.append([InlineKeyboardButton(text=f"{mark}{district}", callback_data=f"dist_{district}")])
+        label = DISTRICTS_EN.get(district, district) if lang == "en" else district
+        rows.append([InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"dist_{district}")])
     rows.append([
         InlineKeyboardButton(text=t("btn_back", lang), callback_data="back_to_search"),
         InlineKeyboardButton(text=t("btn_done", lang), callback_data="dist_done"),
@@ -365,8 +368,10 @@ def property_card_kb(current: int, total: int, prop_id: int,
     ]
     if is_admin:
         rows.append([
-            InlineKeyboardButton(text=t("btn_forward", lang), callback_data=f"forward_{prop_id}"),
-            InlineKeyboardButton(text=t("btn_check", lang),   callback_data=f"admin_check_{prop_id}"),
+            InlineKeyboardButton(text=t("btn_check", lang), callback_data=f"admin_check_{prop_id}"),
+        ])
+        rows.append([
+            InlineKeyboardButton(text="✏️ Исправить район", callback_data=f"fix_district:{prop_id}"),
         ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -414,6 +419,9 @@ def admin_panel_kb(lang: str = "ru") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📊 Статистика",      callback_data="admin_stats")],
         [InlineKeyboardButton(text="👥 Клиенты",         callback_data="admin_clients")],
         [InlineKeyboardButton(text="📤 Рассылка",        callback_data="admin_broadcast")],
+        [InlineKeyboardButton(text="⬇️ Загрузить историю (90 дней)", callback_data="admin_fetch_history")],
+        [InlineKeyboardButton(text="⏬ Загрузить ВСЁ из канала", callback_data="admin_fetch_all")],
+        [InlineKeyboardButton(text="🗺 Геокодировать все объекты", callback_data="admin_geocode_all")],
         [InlineKeyboardButton(text=t("btn_main_menu", lang), callback_data="main_menu")],
     ])
 

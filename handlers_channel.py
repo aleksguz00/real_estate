@@ -59,6 +59,12 @@ class ChannelParser:
         async def on_edited_message(event):
             await self._process_message(event.message, event.chat_id)
 
+        @self.client.on(events.MessageDeleted(chats=list(CHANNELS.keys())))
+        async def on_deleted_message(event):
+            for msg_id in event.deleted_ids:
+                await deactivate_property(event.chat_id, msg_id)
+                logger.info(f"Объект удалён из канала: {event.chat_id}/{msg_id} → деактивирован")
+
         logger.info("✅ Обработчики каналов зарегистрированы")
 
     # ─────────────────────────────────────────────────────────────────────
@@ -113,30 +119,28 @@ class ChannelParser:
 
     async def _get_photos(self, msg: Message, channel_id: int) -> list[str]:
         """
-        Сохраняем только message_id для последующей пересылки.
-        Формат: "channel_id:message_id"
+        Сохраняем только первое фото альбома (наименьший message_id).
+        Формат: ["channel_id:message_id"]
         """
-        photos = []
-
         try:
             if msg.grouped_id:
-                # Альбом — собираем ID всех сообщений группы
+                album_msgs = []
                 async for album_msg in self.client.iter_messages(
                     channel_id,
-                    min_id=msg.id - 15,
-                    max_id=msg.id + 1,
+                    min_id=msg.id - 3,
+                    max_id=msg.id + 20,
                 ):
                     if album_msg.grouped_id == msg.grouped_id and album_msg.photo:
-                        photos.append(f"{channel_id}:{album_msg.id}")
-                        if len(photos) >= 10:
-                            break
+                        album_msgs.append(album_msg)
+                if album_msgs:
+                    first = min(album_msgs, key=lambda m: m.id)
+                    return [f"{channel_id}:{first.id}"]
             elif msg.photo:
-                photos.append(f"{channel_id}:{msg.id}")
-
+                return [f"{channel_id}:{msg.id}"]
         except Exception as e:
-            logger.error(f"Ошибка получения ID фото: {e}")
+            logger.error(f"Ошибка получения фото: {e}")
 
-        return photos
+        return []
 
     # ─────────────────────────────────────────────────────────────────────
     # Уведомления подписчикам
@@ -217,24 +221,95 @@ class ChannelParser:
         for channel_id in CHANNELS:
             await self.fetch_history(channel_id, limit)
 
+    async def get_album_photo_ids(self, channel_id: int, message_id: int) -> list[str]:
+        """Вернуть channel_id:msg_id всех фото в альбоме по одному сообщению."""
+        try:
+            msg = await self.client.get_messages(channel_id, ids=message_id)
+            if not msg:
+                return []
+            if msg.grouped_id:
+                album = []
+                async for m in self.client.iter_messages(
+                    channel_id,
+                    min_id=max(1, msg.id - 20),
+                    max_id=msg.id + 20,
+                ):
+                    if m.grouped_id == msg.grouped_id and m.photo:
+                        album.append(m)
+                album.sort(key=lambda m: m.id)
+                return [f"{channel_id}:{m.id}" for m in album]
+            elif msg.photo:
+                return [f"{channel_id}:{message_id}"]
+        except Exception as e:
+            logger.error(f"get_album_photo_ids error: {e}")
+        return []
+
+    async def fetch_history_since_days(self, days: int = 90):
+        """Загрузить все посты за последние N дней из всех каналов."""
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        for channel_id in CHANNELS:
+            logger.info(f"Загрузка {channel_id} с {cutoff.date()} (последние {days} дней)")
+            count = 0
+            async for msg in self.client.iter_messages(
+                channel_id,
+                offset_date=cutoff,
+                reverse=True,
+            ):
+                if isinstance(msg, Message):
+                    try:
+                        await self._process_message(msg, channel_id)
+                        count += 1
+                        await asyncio.sleep(0.2)
+                    except Exception as e:
+                        logger.error(f"fetch_history_since_days: {e}")
+            logger.info(f"✅ Обработано {count} сообщений из {channel_id}")
+
+    async def fetch_older_posts(self, limit: int | None = None):
+        """Загрузить посты старше самого раннего сохранённого (limit=None — без ограничений)."""
+        from db import pool
+        for channel_id in CHANNELS:
+            async with pool.acquire() as conn:
+                first_id = await conn.fetchval(
+                    "SELECT MIN(message_id) FROM properties WHERE source_channel = $1",
+                    channel_id,
+                )
+            if not first_id:
+                await self.fetch_history(channel_id, limit or 500)
+                continue
+
+            logger.info(f"Загрузка всей истории {channel_id} до #{first_id}")
+            count = 0
+            async for msg in self.client.iter_messages(
+                channel_id, max_id=first_id, limit=limit
+            ):
+                if isinstance(msg, Message):
+                    try:
+                        await self._process_message(msg, channel_id)
+                        count += 1
+                        if count % 100 == 0:
+                            logger.info(f"  [{channel_id}] обработано {count}, msg_id={msg.id}")
+                        await asyncio.sleep(0.15)
+                    except Exception as e:
+                        logger.error(f"fetch_older: {e}")
+            logger.info(f"✅ Загружено {count} постов из {channel_id}")
+
     async def fetch_new_posts(self):
-        """Загрузить только новые посты которых нет в БД."""
+        """Загрузить новые посты. При первом запуске — 500 постов."""
         from db import get_last_message_id
         for channel_id in CHANNELS:
             last_id = await get_last_message_id(channel_id)
-            if last_id:
-                # Загружаем только посты новее последнего сохранённого
+            if not last_id:
+                logger.info(f"Первый запуск — загрузка 500 постов из {channel_id}")
+                await self.fetch_history(channel_id, limit=500)
+            else:
                 logger.info(f"Загрузка новых постов из {channel_id} после #{last_id}")
                 async for msg in self.client.iter_messages(channel_id, min_id=last_id):
                     try:
                         await self._process_message(msg, channel_id)
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.3)
                     except Exception as e:
                         logger.error(f"Ошибка: {e}")
-            else:
-                # Первый запуск — загружаем 300 постов
-                logger.info(f"Первый запуск — загрузка 300 постов из {channel_id}")
-                await self.fetch_history(channel_id, limit=300)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

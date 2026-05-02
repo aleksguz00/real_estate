@@ -32,3 +32,7 @@ class AdminState(StatesGroup):
     waiting_close_date       = State()
     waiting_client_phone     = State()
     waiting_broadcast        = State()
+
+
+class FixDistrict(StatesGroup):
+    waiting_district = State()

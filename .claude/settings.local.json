@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(powershell -Command \"Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force\")"
+      "Bash(powershell -Command \"Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('handlers_user.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(pkill -f bot.py)",
+      "Bash(nohup python3 *)",
+      "Bash(psql -U postgres -d real_estate -c \"SELECT id, address FROM properties WHERE district IS NULL AND is_active=TRUE LIMIT 5;\")"
     ]
   }
 }
