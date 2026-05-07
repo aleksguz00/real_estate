@@ -727,6 +727,19 @@ async def set_reminder(callback: CallbackQuery, state: FSMContext):
         await add_viewing_to_sheet(client_id, prop_id or 0, datetime_str)
 
     hours_text = {1: "час", 2: "часа", 3: "часа"}
+    client_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🔍 Поиск" if lang == "ru" else "🔍 Search",
+                callback_data="open_search",
+            ),
+            InlineKeyboardButton(
+                text="🏠 Меню" if lang == "ru" else "🏠 Menu",
+                callback_data="main_menu",
+            ),
+        ],
+    ])
+
     await callback.bot.send_message(
         chat_id=client_id,
         text=(
@@ -740,14 +753,33 @@ async def set_reminder(callback: CallbackQuery, state: FSMContext):
             f"📍 {prop_address}\n\n"
             f"We'll remind you {hours} hour(s) before!"
         ),
+        reply_markup=client_kb,
     )
+
+    operator_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔍 Поиск", callback_data="open_search"),
+            InlineKeyboardButton(text="🏠 Меню", callback_data="main_menu"),
+        ],
+    ])
 
     await callback.answer("✅ Просмотр записан!")
     await callback.message.answer(
         f"✅ Просмотр записан на {datetime_str}\n"
         f"Напоминание за {hours} ч. будет отправлено обоим.",
+        reply_markup=operator_kb,
         disable_notification=True,
     )
+
+    from aiogram.fsm.storage.base import StorageKey
+    key = StorageKey(bot_id=callback.bot.id, chat_id=client_id, user_id=client_id)
+    client_state = FSMContext(storage=state.storage, key=key)
+    client_data = await client_state.get_data()
+    saved = {k: v for k, v in client_data.items()
+             if k in ["lang", "user_id", "search_results", "search_index"]}
+    await client_state.clear()
+    await client_state.update_data(**saved)
+
     await state.clear()
     await state.update_data(lang=lang)
 
