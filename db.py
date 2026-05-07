@@ -344,16 +344,17 @@ async def save_filter(user_id: int, data: dict, is_subscription: bool = False):
     async with pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO user_filters
-                (user_id, deal_type, property_type, district,
+                (user_id, deal_type, property_type, district, rooms,
                  price_min, price_max, area_min, area_max,
                  floor_min, floor_max, days_depth,
                  heating, features, is_subscription)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         """,
             user_id,
             data.get("deal_type"),
             data.get("property_type", []),
             data.get("district", []),
+            data.get("rooms", []),
             data.get("price_min"),
             data.get("price_max"),
             data.get("area_min"),

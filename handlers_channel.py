@@ -106,9 +106,27 @@ class ChannelParser:
             prop_id = await save_property(data)
             logger.info(f"✅ Объект #{prop_id} сохранён [{data.get('source_code', '')}]")
 
-            # Отправляем уведомления подписчикам
-            if prop_id and self.bot:
-                await self._notify_subscribers(prop_id, data)
+            # Проверяем подписки и уведомляем
+            try:
+                from db import get_subscriptions_for_property
+                subscribers = await get_subscriptions_for_property(data)
+                if subscribers:
+                    from handlers_user import format_property_card, _send_photos_to
+                    card_text = format_property_card(data)
+                    for sub in subscribers:
+                        try:
+                            if data.get("photos"):
+                                await _send_photos_to(self.bot, sub["telegram_id"], data)
+                            await self.bot.send_message(
+                                chat_id=sub["telegram_id"],
+                                text=f"🔔 <b>Новый объект по вашей подписке!</b>\n\n{card_text}",
+                                disable_web_page_preview=True,
+                            )
+                        except Exception as e:
+                            logger.error(f"Subscription notify error for {sub['telegram_id']}: {e}")
+                    logger.info(f"Уведомлено {len(subscribers)} подписчиков")
+            except Exception as e:
+                logger.error(f"Subscriptions check error: {e}")
 
         except Exception as e:
             logger.error(f"Ошибка при обработке сообщения {msg.id}: {e}")
