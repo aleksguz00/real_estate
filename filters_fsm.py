@@ -23,6 +23,7 @@ class FilterState(StatesGroup):
     # Контакт
     waiting_contact_message   = State()
     waiting_phone_for_contact = State()
+    in_dialog                 = State()
     # Бинго
     bingo_game = State()
 

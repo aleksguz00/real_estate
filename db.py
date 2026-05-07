@@ -453,10 +453,6 @@ async def save_viewing(telegram_id: int, property_id: int, viewing_datetime: str
         await conn.execute("""
             INSERT INTO viewings (telegram_id, property_id, viewing_datetime, status)
             VALUES ($1, $2, $3, 'Назначен')
-            ON CONFLICT (telegram_id, property_id)
-            DO UPDATE SET
-                viewing_datetime = EXCLUDED.viewing_datetime,
-                status = 'Назначен'
         """, telegram_id, property_id, viewing_datetime)
 
 

@@ -97,6 +97,11 @@ async def save_viewing_datetime(message: Message, state: FSMContext):
 
     print(f"DEBUG save_viewing: client_id={client_id} prop_id={prop_id} datetime={datetime_str}")
 
+    if not client_id:
+        await message.answer("❌ Ошибка: клиент не найден. Попробуйте заново.")
+        await state.set_state(None)
+        return
+
     await state.update_data(
         viewing_datetime_str=datetime_str,
         viewing_client_id=client_id,
@@ -573,7 +578,7 @@ async def op_reply_template(callback: CallbackQuery, state: FSMContext):
         print(f"DEBUG CONFIRM_VIEWING: client_id={client_id}")
         await state.update_data(
             viewing_client_id=client_id,
-            viewing_prop_id=data.get("reply_prop_id") or data.get("confirm_prop_id") or prop_id or 0,
+            viewing_prop_id=data.get("reply_prop_id") or 0,
             viewing_operator_id=callback.from_user.id,
             reply_lang=lang,
         )
@@ -592,22 +597,21 @@ async def op_reply_template(callback: CallbackQuery, state: FSMContext):
             text=f"💬 <b>{'Ответ менеджера' if lang == 'ru' else 'Manager reply'}:</b>\n\n{text}",
             parse_mode="HTML",
         )
-        # Открываем диалог — клиент может ответить
-        from db import pool
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """INSERT INTO active_dialogs (client_id, operator_id, prop_id)
-                   VALUES ($1, $2, $3)
-                   ON CONFLICT (client_id) DO UPDATE SET
-                       operator_id = EXCLUDED.operator_id,
-                       prop_id = EXCLUDED.prop_id,
-                       created_at = NOW()""",
-                client_id, callback.from_user.id, prop_id or None,
-            )
+        # Устанавливаем клиенту состояние in_dialog через state storage
+        from aiogram.fsm.storage.base import StorageKey
+        from filters_fsm import FilterState
+        key = StorageKey(bot_id=callback.bot.id, chat_id=client_id, user_id=client_id)
+        client_state = FSMContext(storage=state.storage, key=key)
+        client_data = await client_state.get_data()
+        await client_state.update_data(
+            dialog_operator_id=callback.from_user.id,
+            dialog_prop_id=data.get("reply_prop_id") or prop_id or 0,
+            **{k: v for k, v in client_data.items() if k in ["lang", "user_id", "search_results", "search_index"]},
+        )
+        await client_state.set_state(FilterState.in_dialog)
         await callback.bot.send_message(
             chat_id=client_id,
-            text="💬 Напишите ваш ответ 👇",
-            disable_notification=False,
+            text="💬 Напишите ваш ответ 👇" if lang == "ru" else "💬 Write your reply 👇",
         )
         await callback.answer("✅ Отправлено!" if lang == "ru" else "✅ Sent!")
         await callback.message.answer(
@@ -637,22 +641,21 @@ async def op_reply_custom(message: Message, state: FSMContext):
         text=f"💬 <b>{'Ответ менеджера' if lang == 'ru' else 'Manager reply'}:</b>\n\n{message.text}",
         parse_mode="HTML",
     )
-    # Открываем диалог — клиент может ответить
-    from db import pool
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """INSERT INTO active_dialogs (client_id, operator_id, prop_id)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (client_id) DO UPDATE SET
-                   operator_id = EXCLUDED.operator_id,
-                   prop_id = EXCLUDED.prop_id,
-                   created_at = NOW()""",
-            client_id, message.from_user.id, prop_id or None,
-        )
+    # Устанавливаем клиенту состояние in_dialog через state storage
+    from aiogram.fsm.storage.base import StorageKey
+    from filters_fsm import FilterState
+    key = StorageKey(bot_id=message.bot.id, chat_id=client_id, user_id=client_id)
+    client_state = FSMContext(storage=state.storage, key=key)
+    client_data = await client_state.get_data()
+    await client_state.update_data(
+        dialog_operator_id=message.from_user.id,
+        dialog_prop_id=prop_id or 0,
+        **{k: v for k, v in client_data.items() if k in ["lang", "user_id", "search_results", "search_index"]},
+    )
+    await client_state.set_state(FilterState.in_dialog)
     await message.bot.send_message(
         chat_id=client_id,
         text="💬 Напишите ваш ответ 👇",
-        disable_notification=False,
     )
     await message.answer("✅ Ответ отправлен клиенту!", disable_notification=True)
     await state.clear()
@@ -671,6 +674,14 @@ async def set_reminder(callback: CallbackQuery, state: FSMContext):
     operator_id = data.get("viewing_operator_id") or callback.from_user.id
     datetime_str = data.get("viewing_datetime_str")
     lang = data.get("reply_lang", "ru")
+
+    if not client_id:
+        await callback.answer("❌ Ошибка: клиент не найден")
+        await state.set_state(None)
+        return
+
+    if prop_id == 0:
+        prop_id = None
 
     from datetime import datetime, timedelta
     viewing_dt = None

@@ -1413,7 +1413,7 @@ async def handle_contact_message(message: Message, state: FSMContext):
                 [
                     InlineKeyboardButton(
                         text="💬 Ответить клиенту",
-                        url=f"tg://user?id={user.id}",
+                        callback_data=f"op_reply_{user.id}_{prop_id or 0}",
                     ),
                     InlineKeyboardButton(
                         text="📞 Написать владельцу",
@@ -1437,6 +1437,62 @@ async def handle_contact_message(message: Message, state: FSMContext):
 
     await state.set_state(None)
     await message.answer("✅ Ваш запрос отправлен!\nМенеджер свяжется с вами в течение 15 минут.", disable_notification=True)
+
+
+@router.message(FilterState.in_dialog)
+async def handle_dialog_reply(message: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("lang", "ru")
+    operator_id = data.get("dialog_operator_id")
+    prop_id = data.get("dialog_prop_id", 0)
+    user = message.from_user
+
+    if not operator_id:
+        await state.set_state(None)
+        return
+
+    await message.bot.send_message(
+        chat_id=operator_id,
+        text=(
+            f"💬 <b>Ответ клиента {user.full_name}:</b>\n\n"
+            f"{message.text}"
+        ),
+        parse_mode="HTML",
+    )
+    kb_op = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="💬 Ответить",
+            callback_data=f"op_reply_{user.id}_{prop_id}",
+        )]
+    ])
+    await message.bot.send_message(
+        chat_id=operator_id,
+        text="Выберите действие:",
+        reply_markup=kb_op,
+        disable_notification=True,
+    )
+
+    kb_client = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🏠 Главное меню" if lang == "ru" else "🏠 Main menu",
+            callback_data="end_dialog",
+        )]
+    ])
+    await message.answer(
+        "✅ Сообщение отправлено менеджеру!" if lang == "ru" else "✅ Message sent to the manager!",
+        reply_markup=kb_client,
+        disable_notification=True,
+    )
+
+
+@router.callback_query(F.data == "end_dialog")
+async def end_dialog(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    saved = {k: v for k, v in data.items() if k in ["lang", "user_id", "search_results", "search_index"]}
+    await state.clear()
+    await state.update_data(**saved)
+    await callback.answer()
+    await _show_main_menu(callback.message, state)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1662,47 +1718,6 @@ async def inline_property(query: InlineQuery):
 # ─────────────────────────────────────────────────────────────────────────────
 # ОПЕРАТОРЫ — подтверждение / отклонение просмотра
 # ─────────────────────────────────────────────────────────────────────────────
-
-@router.callback_query(F.data.startswith("op_confirm_"))
-async def op_confirm_viewing(callback: CallbackQuery, state: FSMContext):
-    parts = callback.data.split("_")
-    client_id = int(parts[2])
-    prop_id = int(parts[3]) if parts[3] != "0" else None
-
-    await state.update_data(
-        confirm_client_id=client_id,
-        confirm_prop_id=prop_id,
-    )
-    await state.set_state(AdminState.waiting_viewing_datetime)
-    await callback.answer()
-    await callback.message.answer(
-        "📅 Введите дату и время просмотра:\n"
-        "Например: 15.05.2026 в 14:00",
-        disable_notification=True,
-    )
-
-
-@router.message(AdminState.waiting_viewing_datetime)
-async def save_viewing_datetime(message: Message, state: FSMContext):
-    data = await state.get_data()
-    client_id = data.get("confirm_client_id")
-    prop_id = data.get("confirm_prop_id")
-    datetime_str = message.text.strip()
-
-    from db import save_viewing
-    await save_viewing(client_id, prop_id, datetime_str)
-
-    from google_sheets import add_viewing_to_sheet
-    await add_viewing_to_sheet(client_id, prop_id, datetime_str)
-
-    await message.bot.send_message(
-        chat_id=client_id,
-        text=f"✅ Просмотр подтверждён!\n📅 {datetime_str}\n\nДо встречи! 🏠",
-        disable_notification=False,
-    )
-
-    await state.set_state(None)
-    await message.answer("✅ Просмотр записан и клиент уведомлён!", disable_notification=True)
 
 
 @router.callback_query(F.data.startswith("op_decline_"))
