@@ -1717,21 +1717,91 @@ async def op_decline_viewing(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("op_owner_"))
 async def op_owner(callback: CallbackQuery):
+    import re as _re
     prop_id = callback.data.split("_")[2]
     await callback.answer()
+
+    from db import pool
+    async with pool.acquire() as conn:
+        prop = await conn.fetchrow(
+            "SELECT source_code, deal_type FROM properties WHERE id=$1",
+            int(prop_id)
+        )
+
+    if not prop:
+        await callback.message.answer("❌ Объект не найден", disable_notification=True)
+        return
+
+    from google_sheets import get_owner_phone
+    phone = await get_owner_phone(prop["source_code"], prop["deal_type"])
+
+    if not phone:
+        await callback.message.answer(
+            f"❌ Номер не найден для объекта {prop['source_code']}",
+            disable_notification=True,
+        )
+        return
+
+    phone_clean = _re.sub(r"[^\d+]", "", str(phone))
+    if not phone_clean.startswith("+"):
+        phone_clean = "+" + phone_clean
+
+    wa_url = f"https://wa.me/{phone_clean.replace('+', '')}"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"💬 WhatsApp {phone_clean}",
+            url=wa_url,
+        )],
+    ])
     await callback.message.answer(
-        f"📞 База собственников пока не подключена.\n"
-        f"Объект #{prop_id}",
+        f"📞 Собственник {prop['source_code']}:\n{phone_clean}",
+        reply_markup=kb,
         disable_notification=True,
     )
 
 
 @router.callback_query(F.data.startswith("op_check_"))
 async def op_check(callback: CallbackQuery):
+    import re as _re
     prop_id = callback.data.split("_")[2]
     await callback.answer()
+
+    from db import pool
+    async with pool.acquire() as conn:
+        prop = await conn.fetchrow(
+            "SELECT source_code, deal_type FROM properties WHERE id=$1",
+            int(prop_id)
+        )
+
+    if not prop:
+        await callback.message.answer("❌ Объект не найден", disable_notification=True)
+        return
+
+    from google_sheets import get_owner_phone
+    phone = await get_owner_phone(prop["source_code"], prop["deal_type"])
+
+    if not phone:
+        await callback.message.answer(
+            f"❌ Номер не найден для объекта {prop['source_code']}",
+            disable_notification=True,
+        )
+        return
+
+    phone_clean = _re.sub(r"[^\d+]", "", str(phone))
+    if not phone_clean.startswith("+"):
+        phone_clean = "+" + phone_clean
+
+    wa_url = f"https://wa.me/{phone_clean.replace('+', '')}"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"💬 WhatsApp {phone_clean}",
+            url=wa_url,
+        )],
+    ])
     await callback.message.answer(
-        f"🔍 База собственников пока не подключена.\n"
-        f"Объект #{prop_id}",
+        f"📞 Собственник {prop['source_code']}:\n{phone_clean}",
+        reply_markup=kb,
         disable_notification=True,
     )
