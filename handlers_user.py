@@ -740,31 +740,8 @@ async def skip_budget(callback: CallbackQuery, state: FSMContext):
 
 @router.message(FilterState.budget_manual_input)
 async def budget_manual_input(message: Message, state: FSMContext):
-    import re as _re
     text = message.text.strip()
-    price_min = None
-    price_max = None
-    range_match = _re.search(r"(\d+)\s*[-–]\s*(\d+)", text)
-    if range_match:
-        price_min = int(range_match.group(1))
-        price_max = int(range_match.group(2))
-    else:
-        max_match = _re.search(r"до\s*(\d+)", text, _re.IGNORECASE)
-        if max_match:
-            price_max = int(max_match.group(1))
-        min_match = _re.search(r"от\s*(\d+)", text, _re.IGNORECASE)
-        if min_match:
-            price_min = int(min_match.group(1))
-        if not price_min and not price_max:
-            num_match = _re.search(r"(\d+)", text)
-            if num_match:
-                price_max = int(num_match.group(1))
-    await state.update_data(
-        budget_manual=text,
-        budget_label=text,
-        price_min=price_min,
-        price_max=price_max,
-    )
+    await state.update_data(budget_manual=text, budget_label=text)
     await message.delete()
     await state.set_state(None)
     data = await state.get_data()
@@ -984,15 +961,6 @@ def format_property_card(prop: dict, lang: str = "ru") -> str:
 
 
 # Маппинг FSM-значений (из локалей) в DB-ключи (из парсера)
-_ROOMS_TO_DB = {
-    "студия": "Студия",
-    "1+1": "1+1",
-    "2+1": "2+1",
-    "3+1": "3+1",
-    "4+1+": "4+1",
-    "studio": "Студия",
-}
-
 _HEATING_TO_DB = {
     "центральное": "центральное",
     "карма": "карма",
@@ -1026,7 +994,7 @@ _FEATURES_TO_DB = {
 
 
 
-def build_filters_from_state(data: dict, telegram_id: int = None) -> dict:
+def build_filters_from_state(data: dict) -> dict:
     """Собрать фильтры из FSM данных."""
     filters = {}
 
@@ -1043,15 +1011,7 @@ def build_filters_from_state(data: dict, telegram_id: int = None) -> dict:
         rooms = data["rooms"]
         if isinstance(rooms, str):
             rooms = [rooms]
-        db_rooms = [_ROOMS_TO_DB.get(r.lower(), r) for r in rooms]
-        filters["rooms"] = db_rooms
-        if "Студия" in db_rooms:
-            prop_types = filters.get("property_type", [])
-            if "apartment" in prop_types and "studio" not in prop_types:
-                prop_types.append("studio")
-            elif not prop_types:
-                prop_types = ["apartment", "studio"]
-            filters["property_type"] = prop_types
+        filters["rooms"] = rooms
 
     if data.get("area_from"):
         filters["area_min"] = data["area_from"]
@@ -1085,24 +1045,12 @@ def build_filters_from_state(data: dict, telegram_id: int = None) -> dict:
         if maxs:
             filters["price_max"] = max(maxs)
 
-    # Ручной ввод бюджета
-    if data.get("price_min") is not None and "price_min" not in filters:
-        filters["price_min"] = data["price_min"]
-    if data.get("price_max") is not None and "price_max" not in filters:
-        filters["price_max"] = data["price_max"]
-
     # Глубина поиска
     fresh = data.get("fresh", "")
     if fresh:
         days_match = __import__("re").search(r"(\d+)", fresh)
         if days_match:
             filters["days_depth"] = int(days_match.group(1))
-    else:
-        effective_id = telegram_id or data.get("user_id")
-        if effective_id and effective_id in OPERATOR_IDS:
-            pass
-        else:
-            filters["days_depth"] = 30
 
     return filters
 
@@ -1113,7 +1061,7 @@ async def filter_show(callback: CallbackQuery, state: FSMContext):
     lang = data.get("lang", "ru")
     await callback.answer(t("searching", lang))
 
-    filters = build_filters_from_state(data, telegram_id=callback.from_user.id)
+    filters = build_filters_from_state(data)
 
     from db import get_property_ids, get_properties
     prop_ids = await get_property_ids(filters)
@@ -1415,7 +1363,7 @@ async def handle_contact_message(message: Message, state: FSMContext):
                 [
                     InlineKeyboardButton(
                         text="💬 Ответить клиенту",
-                        callback_data=f"op_reply_{user.id}_{prop_id or 0}",
+                        url=f"tg://user?id={user.id}",
                     ),
                     InlineKeyboardButton(
                         text="📞 Написать владельцу",
