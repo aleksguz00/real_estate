@@ -368,10 +368,11 @@ def property_card_kb(current: int, total: int, prop_id: int,
     ]
     if is_admin:
         rows.append([
-            InlineKeyboardButton(text=t("btn_check", lang), callback_data=f"admin_check_{prop_id}"),
+            InlineKeyboardButton(text=t("btn_check", lang), callback_data=f"op_check_{prop_id}"),
         ])
+        fix_label = "✏️ Fix district" if lang == "en" else "✏️ Исправить район"
         rows.append([
-            InlineKeyboardButton(text="✏️ Исправить район", callback_data=f"fix_district:{prop_id}"),
+            InlineKeyboardButton(text=fix_label, callback_data=f"fix_district:{prop_id}"),
         ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

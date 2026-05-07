@@ -21,7 +21,8 @@ class FilterState(StatesGroup):
     choosing_features   = State()
     choosing_heating    = State()
     # Контакт
-    waiting_contact_message = State()
+    waiting_contact_message   = State()
+    waiting_phone_for_contact = State()
     # Бинго
     bingo_game = State()
 
@@ -32,6 +33,8 @@ class AdminState(StatesGroup):
     waiting_close_date       = State()
     waiting_client_phone     = State()
     waiting_broadcast        = State()
+    waiting_reply_text       = State()
+    waiting_reminder_choice  = State()
 
 
 class FixDistrict(StatesGroup):

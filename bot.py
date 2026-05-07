@@ -7,12 +7,14 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import TelegramBadRequest
 
 from config import BOT_TOKEN
 from db import init_db
 from handlers_user import router as user_router
 from handlers_admin import router as admin_router
 from handlers_channel import start_parser
+from reminder_scheduler import check_reminders
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,10 +57,15 @@ async def main():
     # Загружаем только новые посты которых нет в БД
     asyncio.create_task(parser.fetch_new_posts())
 
+    # Планировщик напоминаний о просмотрах
+    asyncio.create_task(check_reminders(bot))
+
     logger.info("✅ Бот запущен")
 
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    except Exception as e:
+        logging.error(f"Polling error: {e}")
     finally:
         await parser.stop()
         await bot.session.close()

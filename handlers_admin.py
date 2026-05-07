@@ -17,6 +17,33 @@ from db import (
 
 router = Router()
 
+REPLY_TEMPLATES = {
+    "ru": [
+        ("✅ Актуален + вопросы",
+         "Объект актуален ✅\n\nУточните пожалуйста:\n• Сколько человек будет проживать?\n• Планируемая дата заезда?\n• Период аренды?\n• Есть ли домашние животные?"),
+        ("🐾 Питомцы запрещены",
+         "К сожалению, проживание с питомцами запрещено 🚫\n\nМожем подобрать другие варианты где питомцы разрешены 🏠"),
+        ("📅 Записать на просмотр",
+         "Готовы организовать просмотр.\nКогда вам удобно?"),
+        ("✅ Подтвердить просмотр", "CONFIRM_VIEWING"),
+        ("❌ Объект сдан",
+         "К сожалению, объект уже сдан.\nМожем подобрать другие варианты 🏠"),
+        ("✍️ Свой ответ", None),
+    ],
+    "en": [
+        ("✅ Available + questions",
+         "Property is available ✅\n\nPlease clarify:\n• How many people will be living?\n• Planned move-in date?\n• Rental period?\n• Do you have pets?"),
+        ("🐾 No pets allowed",
+         "Unfortunately, pets are not allowed 🚫\n\nWe can find other options where pets are welcome 🏠"),
+        ("📅 Schedule viewing",
+         "Ready to arrange a viewing.\nWhen is convenient for you?"),
+        ("✅ Confirm viewing", "CONFIRM_VIEWING"),
+        ("❌ Already rented",
+         "Unfortunately, this property is already rented.\nWe can find other options 🏠"),
+        ("✍️ Custom reply", None),
+    ],
+}
+
 
 def _parse_op_data(data: str):
     """Парсим callback_data формата op_action_USERID_PROPID."""
@@ -37,61 +64,57 @@ async def op_confirm_viewing(callback: CallbackQuery, state: FSMContext):
         return
 
     user_id, prop_id = _parse_op_data(callback.data)
-    await state.update_data(target_user_id=user_id, target_prop_id=prop_id)
+    await state.update_data(
+        viewing_client_id=user_id,
+        viewing_prop_id=prop_id,
+        viewing_operator_id=callback.from_user.id,
+        reply_lang="ru",
+    )
     await state.set_state(AdminState.waiting_viewing_datetime)
     await callback.answer()
     await callback.message.answer(
         f"📅 Введите дату и время просмотра для клиента <code>{user_id}</code>\n\n"
-        f"Формат: <b>27 апреля 15:00</b>"
+        f"Формат: <b>15.05.2026 14:00</b>",
+        disable_notification=True,
     )
 
 
 @router.message(AdminState.waiting_viewing_datetime)
 async def save_viewing_datetime(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-
     data = await state.get_data()
-    user_id = data["target_user_id"]
-    prop_id = data["target_prop_id"]
     datetime_str = message.text.strip()
+    lang = data.get("reply_lang", "ru")
 
-    # Сохраняем в БД и таблицу
-    await save_viewing(user_id, prop_id, datetime_str)
-    await log_to_sheets(user_id, prop_id, {"viewing_date": datetime_str, "status": "Назначен"})
-
-    await state.set_state(None)
-
-    # Уведомляем клиента
-    client_info = await get_user_info(user_id)
-    phone = client_info.get("phone", "")
-    phone_text = f"\n\n📱 Подтвердите номер телефона (необязательно)" if not phone else ""
-
-    confirm_kb = None
-    if not phone:
-        confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📱 Поделиться номером",
-                    callback_data="share_phone_viewing"
-                ),
-                InlineKeyboardButton(text="Пропустить", callback_data="skip_phone_viewing"),
-            ]
-        ])
-
-    await message.bot.send_message(
-        chat_id=user_id,
-        text=(
-            f"✅ <b>Просмотр подтверждён!</b>\n\n"
-            f"🏠 Объект: #{prop_id}\n"
-            f"📅 Дата и время: <b>{datetime_str}</b>\n\n"
-            f"Ждём вас! Если возникнут вопросы — пишите нам."
-            f"{phone_text}"
-        ),
-        reply_markup=confirm_kb,
+    client_id = (
+        data.get("viewing_client_id") or
+        data.get("confirm_client_id")
     )
+    prop_id = (
+        data.get("viewing_prop_id") or
+        data.get("confirm_prop_id")
+    )
+    operator_id = data.get("viewing_operator_id") or message.from_user.id
 
-    await message.answer(f"✅ Клиент <code>{user_id}</code> уведомлён о просмотре {datetime_str}")
+    print(f"DEBUG save_viewing: client_id={client_id} prop_id={prop_id} datetime={datetime_str}")
+
+    await state.update_data(
+        viewing_datetime_str=datetime_str,
+        viewing_client_id=client_id,
+        viewing_prop_id=prop_id,
+        viewing_operator_id=operator_id,
+    )
+    await state.set_state(AdminState.waiting_reminder_choice)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏰ За 1 час", callback_data="reminder_1")],
+        [InlineKeyboardButton(text="⏰ За 2 часа", callback_data="reminder_2")],
+        [InlineKeyboardButton(text="⏰ За 3 часа", callback_data="reminder_3")],
+    ])
+    await message.answer(
+        "За сколько времени напомнить о просмотре?",
+        reply_markup=kb,
+        disable_notification=True,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -498,6 +521,224 @@ async def fetch_sale_history(message: Message):
             count += 1
 
     await message.answer(f"✅ Загружено {count} постов продажи")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Ответить клиенту по шаблону
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("op_reply_"))
+async def op_reply_start(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_")
+    client_id = int(parts[2])
+    prop_id = int(parts[3]) if len(parts) > 3 else 0
+
+    from db import pool
+    async with pool.acquire() as conn:
+        lang = await conn.fetchval(
+            "SELECT lang FROM users WHERE telegram_id=$1", client_id
+        ) or "ru"
+
+    await state.update_data(reply_client_id=client_id, reply_lang=lang, reply_prop_id=prop_id)
+
+    templates = REPLY_TEMPLATES.get(lang, REPLY_TEMPLATES["ru"])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=label,
+            callback_data=f"op_tpl_{i}_{client_id}_{prop_id}",
+        )]
+        for i, (label, _) in enumerate(templates)
+    ])
+    await callback.answer()
+    await callback.message.answer(
+        "Выберите шаблон ответа:" if lang == "ru" else "Choose reply template:",
+        reply_markup=kb,
+        disable_notification=True,
+    )
+
+
+@router.callback_query(F.data.startswith("op_tpl_"))
+async def op_reply_template(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_")
+    tpl_idx = int(parts[2])
+    client_id = int(parts[3])
+    prop_id = int(parts[4]) if len(parts) > 4 else 0
+
+    data = await state.get_data()
+    lang = data.get("reply_lang", "ru")
+    templates = REPLY_TEMPLATES.get(lang, REPLY_TEMPLATES["ru"])
+    label, text = templates[tpl_idx]
+
+    if text == "CONFIRM_VIEWING":
+        print(f"DEBUG CONFIRM_VIEWING: client_id={client_id}")
+        await state.update_data(
+            viewing_client_id=client_id,
+            viewing_prop_id=data.get("reply_prop_id") or data.get("confirm_prop_id") or prop_id or 0,
+            viewing_operator_id=callback.from_user.id,
+            reply_lang=lang,
+        )
+        await state.set_state(AdminState.waiting_viewing_datetime)
+        await callback.answer()
+        await callback.message.answer(
+            "📅 Введите дату и время просмотра:\nНапример: 15.05.2026 14:00"
+            if lang == "ru" else
+            "📅 Enter date and time:\nExample: 15.05.2026 14:00",
+            disable_notification=True,
+        )
+        return
+    elif text:
+        await callback.bot.send_message(
+            chat_id=client_id,
+            text=f"💬 <b>{'Ответ менеджера' if lang == 'ru' else 'Manager reply'}:</b>\n\n{text}",
+            parse_mode="HTML",
+        )
+        # Открываем диалог — клиент может ответить
+        from db import pool
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO active_dialogs (client_id, operator_id, prop_id)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (client_id) DO UPDATE SET
+                       operator_id = EXCLUDED.operator_id,
+                       prop_id = EXCLUDED.prop_id,
+                       created_at = NOW()""",
+                client_id, callback.from_user.id, prop_id or None,
+            )
+        await callback.bot.send_message(
+            chat_id=client_id,
+            text="💬 Напишите ваш ответ 👇",
+            disable_notification=False,
+        )
+        await callback.answer("✅ Отправлено!" if lang == "ru" else "✅ Sent!")
+        await callback.message.answer(
+            "✅ Ответ отправлен клиенту",
+            disable_notification=True,
+        )
+        await state.clear()
+    else:
+        await state.update_data(reply_client_id=client_id, reply_prop_id=prop_id)
+        await state.set_state(AdminState.waiting_reply_text)
+        await callback.answer()
+        await callback.message.answer(
+            "✍️ Напишите ваш ответ клиенту:" if lang == "ru" else "✍️ Write your reply:",
+            disable_notification=True,
+        )
+
+
+@router.message(AdminState.waiting_reply_text)
+async def op_reply_custom(message: Message, state: FSMContext):
+    data = await state.get_data()
+    client_id = data.get("reply_client_id")
+    prop_id = data.get("reply_prop_id", 0)
+    lang = data.get("reply_lang", "ru")
+
+    await message.bot.send_message(
+        chat_id=client_id,
+        text=f"💬 <b>{'Ответ менеджера' if lang == 'ru' else 'Manager reply'}:</b>\n\n{message.text}",
+        parse_mode="HTML",
+    )
+    # Открываем диалог — клиент может ответить
+    from db import pool
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO active_dialogs (client_id, operator_id, prop_id)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (client_id) DO UPDATE SET
+                   operator_id = EXCLUDED.operator_id,
+                   prop_id = EXCLUDED.prop_id,
+                   created_at = NOW()""",
+            client_id, message.from_user.id, prop_id or None,
+        )
+    await message.bot.send_message(
+        chat_id=client_id,
+        text="💬 Напишите ваш ответ 👇",
+        disable_notification=False,
+    )
+    await message.answer("✅ Ответ отправлен клиенту!", disable_notification=True)
+    await state.clear()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Выбор времени напоминания о просмотре
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.callback_query(AdminState.waiting_reminder_choice, F.data.startswith("reminder_"))
+async def set_reminder(callback: CallbackQuery, state: FSMContext):
+    hours = int(callback.data.split("_")[1])
+    data = await state.get_data()
+    client_id = data.get("viewing_client_id")
+    prop_id = data.get("viewing_prop_id")
+    operator_id = data.get("viewing_operator_id") or callback.from_user.id
+    datetime_str = data.get("viewing_datetime_str")
+    lang = data.get("reply_lang", "ru")
+
+    from datetime import datetime, timedelta
+    viewing_dt = None
+    for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y в %H:%M"):
+        try:
+            viewing_dt = datetime.strptime(datetime_str, fmt)
+            break
+        except Exception:
+            pass
+
+    if not viewing_dt:
+        await callback.answer()
+        await callback.message.answer(
+            "❌ Неверный формат даты. Введите: 15.05.2026 14:00",
+            disable_notification=True,
+        )
+        await state.set_state(AdminState.waiting_viewing_datetime)
+        return
+
+    reminder_dt = viewing_dt - timedelta(hours=hours)
+
+    from db import save_viewing, pool
+    if client_id and prop_id:
+        await save_viewing(client_id, prop_id, datetime_str)
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO reminders
+               (client_id, operator_id, prop_id, viewing_dt, reminder_dt, reminded)
+               VALUES ($1, $2, $3, $4, $5, FALSE)""",
+            client_id, operator_id, prop_id or None, viewing_dt, reminder_dt,
+        )
+
+    prop_address = ""
+    if prop_id:
+        async with pool.acquire() as conn:
+            prop_address = await conn.fetchval(
+                "SELECT address FROM properties WHERE id=$1", prop_id
+            ) or ""
+
+    from google_sheets import add_viewing_to_sheet
+    if client_id:
+        await add_viewing_to_sheet(client_id, prop_id or 0, datetime_str)
+
+    hours_text = {1: "час", 2: "часа", 3: "часа"}
+    await callback.bot.send_message(
+        chat_id=client_id,
+        text=(
+            f"✅ Просмотр подтверждён!\n"
+            f"📅 {datetime_str}\n"
+            f"📍 {prop_address}\n\n"
+            f"Напомним за {hours} {hours_text.get(hours, 'часа')} до встречи!"
+        ) if lang == "ru" else (
+            f"✅ Viewing confirmed!\n"
+            f"📅 {datetime_str}\n"
+            f"📍 {prop_address}\n\n"
+            f"We'll remind you {hours} hour(s) before!"
+        ),
+    )
+
+    await callback.answer("✅ Просмотр записан!")
+    await callback.message.answer(
+        f"✅ Просмотр записан на {datetime_str}\n"
+        f"Напоминание за {hours} ч. будет отправлено обоим.",
+        disable_notification=True,
+    )
+    await state.clear()
+    await state.update_data(lang=lang)
 
 
 @router.message(AdminState.waiting_client_phone, F.contact)
