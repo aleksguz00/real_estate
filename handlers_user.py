@@ -13,7 +13,7 @@ from keyboards import (
     language_kb, subscription_kb, main_menu_kb, search_dashboard_kb,
     fresh_kb, rooms_kb, area_kb, deal_type_kb, land_type_kb,
     district_kb, budget_kb, features_kb, heating_kb, property_card_kb,
-    favorites_kb, subscriptions_kb, admin_panel_kb, skip_kb,
+    favorites_kb, admin_panel_kb, skip_kb,
     PRICE_RANGES_RENT, PRICE_RANGES_SALE, FRESHNESS_OPTIONS,
 )
 from locales import t, tl
@@ -1304,18 +1304,117 @@ async def show_subscriptions(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lang = data.get("lang", "ru")
     await callback.answer()
-    await callback.message.answer(
-        f"🔔 <b>{t('subscriptions_title', lang)}</b>\n\n{t('subscriptions_text', lang)}",
-        reply_markup=subscriptions_kb(has_active=False, lang=lang),
-        disable_notification=True,
-    )
+
+    from db import get_user_id, pool
+    user_id = await get_user_id(callback.from_user.id)
+    if not user_id:
+        await callback.message.answer("🔔 Нет подписок.", disable_notification=True)
+        return
+
+    async with pool.acquire() as conn:
+        subs = await conn.fetch(
+            "SELECT * FROM user_filters WHERE user_id=$1 AND is_subscription=TRUE",
+            user_id
+        )
+
+    if not subs:
+        await callback.message.answer(
+            "🔔 У вас нет активных подписок.\n\n"
+            "Настройте фильтры и нажмите «Подписаться на фильтр»."
+            if lang == "ru" else
+            "🔔 No active subscriptions.\n\n"
+            "Set filters and tap 'Subscribe'.",
+            disable_notification=True,
+        )
+        return
+
+    text = "🔔 <b>Ваши подписки:</b>\n\n" if lang == "ru" else "🔔 <b>Subscriptions:</b>\n\n"
+    buttons = []
+    for i, sub in enumerate(subs):
+        parts = []
+        if sub["deal_type"]:
+            parts.append("Аренда" if sub["deal_type"] == "rent" else "Продажа")
+        if sub.get("district"):
+            parts.append(f"Район: {', '.join(sub['district'])}")
+        if sub.get("price_min") or sub.get("price_max"):
+            p = ""
+            if sub.get("price_min"):
+                p += f"от ${sub['price_min']}"
+            if sub.get("price_max"):
+                p += f" до ${sub['price_max']}"
+            parts.append(p.strip())
+        desc = " | ".join(parts) if parts else "Все объекты"
+        text += f"{i+1}. {desc}\n"
+        buttons.append([InlineKeyboardButton(
+            text=f"❌ Удалить подписку {i+1}",
+            callback_data=f"unsub_{sub['id']}",
+        )])
+    buttons.append([InlineKeyboardButton(
+        text="🏠 Меню" if lang == "ru" else "🏠 Menu",
+        callback_data="main_menu",
+    )])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.message.answer(text, reply_markup=kb, parse_mode="HTML", disable_notification=True)
+
+
+@router.callback_query(F.data.startswith("unsub_"))
+async def unsubscribe(callback: CallbackQuery):
+    sub_id = int(callback.data.replace("unsub_", ""))
+    from db import pool
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM user_filters WHERE id=$1", sub_id)
+    await callback.answer("✅ Подписка удалена!")
+    await callback.message.edit_text("✅ Подписка удалена!")
 
 
 @router.callback_query(F.data == "subscribe")
 async def subscribe(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.answer(t("sub_activated", lang), show_alert=True)
+
+    filters = build_filters_from_state(data, telegram_id=callback.from_user.id)
+
+    if not filters.get("deal_type"):
+        await callback.answer(
+            "⚠️ Сначала выберите фильтры" if lang == "ru"
+            else "⚠️ Set filters first",
+            show_alert=True,
+        )
+        return
+
+    from db import get_user_id, save_filter
+    user_id = await get_user_id(callback.from_user.id)
+    if not user_id:
+        await callback.answer("❌ Ошибка", show_alert=True)
+        return
+
+    await save_filter(user_id, filters, is_subscription=True)
+
+    desc_parts = []
+    if filters.get("deal_type"):
+        desc_parts.append("Аренда" if filters["deal_type"] == "rent" else "Продажа")
+    if filters.get("rooms"):
+        desc_parts.append(f"Комнаты: {', '.join(filters['rooms'])}")
+    if filters.get("district"):
+        desc_parts.append(f"Район: {', '.join(filters['district'])}")
+    if filters.get("price_min") or filters.get("price_max"):
+        p = ""
+        if filters.get("price_min"):
+            p += f"от ${filters['price_min']}"
+        if filters.get("price_max"):
+            p += f" до ${filters['price_max']}"
+        desc_parts.append(p.strip())
+    desc = "\n".join(desc_parts) if desc_parts else "Все объекты"
+
+    await callback.answer()
+    await callback.message.answer(
+        f"✅ Подписка оформлена!\n\n{desc}\n\n"
+        f"Вы получите уведомление когда появится подходящий объект 🔔"
+        if lang == "ru" else
+        f"✅ Subscribed!\n\n{desc}\n\n"
+        f"You'll be notified when a matching property appears 🔔",
+        disable_notification=True,
+    )
 
 
 @router.callback_query(F.data == "sub_disable")
