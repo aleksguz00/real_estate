@@ -253,20 +253,6 @@ def land_type_kb(selected: str | None = None, lang: str = "ru") -> InlineKeyboar
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def commercial_type_kb(selected: str | None = None, lang: str = "ru") -> InlineKeyboardMarkup:
-    items = [
-        ("hotel", "btn_hotel"), ("restaurant", "btn_restaurant"),
-        ("beauty", "btn_beauty"), ("office", "btn_office"),
-        ("retail", "btn_retail"), ("warehouse", "btn_warehouse"),
-    ]
-    rows = []
-    for key, text_key in items:
-        mark = "✅ " if key == selected else ""
-        rows.append([InlineKeyboardButton(text=f"{mark}{t(text_key, lang)}", callback_data=f"commercial_{key}")])
-    rows.append([InlineKeyboardButton(text=t("btn_back", lang), callback_data="filter_type")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # ЛОКАЦИЯ
 # ─────────────────────────────────────────────────────────────────────────────

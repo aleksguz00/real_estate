@@ -11,7 +11,7 @@ from aiogram.fsm.context import FSMContext
 
 from keyboards import (
     language_kb, subscription_kb, main_menu_kb, search_dashboard_kb,
-    fresh_kb, rooms_kb, area_kb, deal_type_kb, land_type_kb, commercial_type_kb,
+    fresh_kb, rooms_kb, area_kb, deal_type_kb, land_type_kb,
     district_kb, budget_kb, features_kb, heating_kb, property_card_kb,
     favorites_kb, subscriptions_kb, admin_panel_kb, skip_kb,
     PRICE_RANGES_RENT, PRICE_RANGES_SALE, FRESHNESS_OPTIONS,
@@ -482,9 +482,15 @@ async def set_prop_type(callback: CallbackQuery, state: FSMContext):
     selected = data.get("prop_types", [])
 
     if prop == "commercial":
-        await state.update_data(prop_types=["commercial"], commercial_type=None)
-        await state.set_state(FilterState.choosing_commercial)
-        await callback.message.edit_reply_markup(reply_markup=commercial_type_kb(lang=lang))
+        if "commercial" in selected:
+            selected.remove("commercial")
+        else:
+            selected.append("commercial")
+        await state.update_data(prop_types=selected)
+        data = await state.get_data()
+        await callback.message.edit_reply_markup(
+            reply_markup=deal_type_kb(data.get("deal_type"), selected, lang)
+        )
     elif prop == "land":
         await state.update_data(prop_types=["land"], land_type=None)
         await state.set_state(FilterState.choosing_land)
@@ -546,31 +552,6 @@ async def back_from_land(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ТИП КОММЕРЦИИ
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.callback_query(FilterState.choosing_commercial, F.data.startswith("commercial_"))
-async def set_commercial(callback: CallbackQuery, state: FSMContext):
-    comm = callback.data.replace("commercial_", "")
-    await state.update_data(commercial_type=comm)
-    await state.set_state(None)
-    data = await state.get_data()
-    lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
-    await callback.answer()
-
-
-@router.callback_query(FilterState.choosing_commercial, F.data == "filter_type")
-async def back_from_commercial(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(FilterState.choosing_type)
-    data = await state.get_data()
-    lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(
-        reply_markup=deal_type_kb(data.get("deal_type"), data.get("prop_types", []), lang)
-    )
-    await callback.answer()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
