@@ -31,14 +31,31 @@ async def check_reminders(bot):
                                 r["prop_id"]
                             ) or ""
 
-                        text = (
+                        client = await conn.fetchrow(
+                            "SELECT full_name, username, phone FROM users WHERE telegram_id=$1",
+                            r["client_id"]
+                        )
+                        client_name = client["full_name"] if client else str(r["client_id"])
+                        client_phone = client["phone"] if client else ""
+                        client_username = client["username"] if client else ""
+
+                        client_text = (
                             f"📅 Напоминание о просмотре!\n\n"
                             f"🕐 {r['viewing_dt'].strftime('%d.%m.%Y %H:%M')}\n"
                             f"📍 {prop_address}"
                         )
 
-                        await bot.send_message(chat_id=r["client_id"], text=text)
-                        await bot.send_message(chat_id=r["operator_id"], text=f"⚡️ {text}")
+                        operator_text = (
+                            f"⚡️ Напоминание о просмотре!\n\n"
+                            f"🕐 {r['viewing_dt'].strftime('%d.%m.%Y %H:%M')}\n"
+                            f"📍 {prop_address}\n\n"
+                            f"👤 Клиент: {client_name}\n"
+                            f"📱 Телефон: {client_phone or '—'}\n"
+                            f"🔗 Username: @{client_username or '—'}"
+                        )
+
+                        await bot.send_message(chat_id=r["client_id"], text=client_text)
+                        await bot.send_message(chat_id=r["operator_id"], text=operator_text)
 
                         await conn.execute(
                             "UPDATE reminders SET reminded=TRUE WHERE id=$1", r["id"]

@@ -93,7 +93,7 @@ async def add_viewing_to_sheet(client_id: int, prop_id: int, datetime_str: str):
             ) if prop_id else None
 
         client_name = user["full_name"] if user else str(client_id)
-        client_phone = user["phone"] if user else ""
+        client_phone = user["phone"] if user and user["phone"] else ""
         prop_info = f"{prop['source_code']} | {prop['address']}" if prop else ""
 
         try:
