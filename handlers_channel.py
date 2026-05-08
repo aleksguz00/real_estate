@@ -106,6 +106,20 @@ class ChannelParser:
             prop_id = await save_property(data)
             logger.info(f"✅ Объект #{prop_id} сохранён [{data.get('source_code', '')}]")
 
+            # Автоматическое геокодирование
+            if data.get("address") and not data.get("lat"):
+                try:
+                    from utils import geocode_address
+                    from db import update_property_geocode
+                    district, lat, lon = await geocode_address(data["address"])
+                    if district or lat:
+                        await update_property_geocode(prop_id, district, lat, lon)
+                        data["district"] = district
+                        data["lat"] = lat
+                        data["lon"] = lon
+                except Exception as e:
+                    logger.warning(f"Geocode error for #{prop_id}: {e}")
+
             # Проверяем подписки и уведомляем
             try:
                 from db import get_subscriptions_for_property
