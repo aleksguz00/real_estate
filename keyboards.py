@@ -406,6 +406,16 @@ def admin_panel_kb(lang: str = "ru") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📊 Статистика",      callback_data="admin_stats")],
         [InlineKeyboardButton(text="👥 Клиенты",         callback_data="admin_clients")],
         [InlineKeyboardButton(text="📤 Рассылка",        callback_data="admin_broadcast")],
+        [
+            InlineKeyboardButton(
+                text="👤 Добавить админа" if lang == "ru" else "👤 Add admin",
+                callback_data="admin_add",
+            ),
+            InlineKeyboardButton(
+                text="🗑 Удалить админа" if lang == "ru" else "🗑 Remove admin",
+                callback_data="admin_remove",
+            ),
+        ],
         [InlineKeyboardButton(text="⬇️ Загрузить историю (90 дней)", callback_data="admin_fetch_history")],
         [InlineKeyboardButton(text="⏬ Загрузить ВСЁ из канала", callback_data="admin_fetch_all")],
         [InlineKeyboardButton(text="🗺 Геокодировать все объекты", callback_data="admin_geocode_all")],

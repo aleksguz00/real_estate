@@ -1630,6 +1630,117 @@ async def handle_broadcast(message: Message, state: FSMContext):
     await message.answer("✅ Рассылка запущена!", disable_notification=True)
 
 
+@router.callback_query(F.data == "admin_add")
+async def admin_add(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+    await callback.answer()
+    await state.set_state(AdminState.waiting_admin_id)
+    await callback.message.answer(
+        "👤 Введите Telegram ID нового администратора:\n\n"
+        "Пользователь должен сначала написать боту /start",
+        disable_notification=True,
+    )
+
+
+@router.message(AdminState.waiting_admin_id)
+async def save_admin(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        new_admin_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введите числовой Telegram ID")
+        return
+
+    from db import pool
+    async with pool.acquire() as conn:
+        user = await conn.fetchrow(
+            "SELECT telegram_id, username, full_name FROM users WHERE telegram_id=$1",
+            new_admin_id
+        )
+        if not user:
+            await message.answer(
+                f"❌ Пользователь с ID {new_admin_id} не найден.\n"
+                f"Он должен сначала написать боту /start",
+            )
+            await state.set_state(None)
+            return
+
+        await conn.execute(
+            "INSERT INTO admins (telegram_id) VALUES ($1) ON CONFLICT DO NOTHING",
+            new_admin_id
+        )
+
+    await state.set_state(None)
+    await message.answer(
+        f"✅ Администратор добавлен!\n\n"
+        f"👤 {user['full_name'] or ''}\n"
+        f"🔗 @{user['username'] or '—'}\n"
+        f"🆔 {new_admin_id}",
+        disable_notification=True,
+    )
+
+
+@router.callback_query(F.data == "admin_remove")
+async def admin_remove(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+
+    from db import pool
+    async with pool.acquire() as conn:
+        admins = await conn.fetch("""
+            SELECT a.telegram_id, u.full_name, u.username
+            FROM admins a
+            LEFT JOIN users u ON u.telegram_id = a.telegram_id
+        """)
+
+    if len(admins) <= 1:
+        await callback.answer("⚠️ Нельзя удалить единственного админа", show_alert=True)
+        return
+
+    buttons = []
+    for admin in admins:
+        if admin["telegram_id"] == callback.from_user.id:
+            continue
+        name = admin["full_name"] or f"ID: {admin['telegram_id']}"
+        buttons.append([InlineKeyboardButton(
+            text=f"❌ {name} (@{admin['username'] or '—'})",
+            callback_data=f"del_admin_{admin['telegram_id']}",
+        )])
+    buttons.append([InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="admin_panel",
+    )])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.answer()
+    await callback.message.answer(
+        "Выберите администратора для удаления:",
+        reply_markup=kb,
+        disable_notification=True,
+    )
+
+
+@router.callback_query(F.data.startswith("del_admin_"))
+async def delete_admin(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+
+    admin_id = int(callback.data.replace("del_admin_", ""))
+
+    from db import pool
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM admins WHERE telegram_id=$1",
+            admin_id
+        )
+
+    await callback.answer("✅ Администратор удалён!")
+    await callback.message.edit_text(f"✅ Администратор {admin_id} удалён!")
 
 
 

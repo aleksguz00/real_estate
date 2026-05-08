@@ -35,6 +35,7 @@ class AdminState(StatesGroup):
     waiting_broadcast        = State()
     waiting_reply_text       = State()
     waiting_reminder_choice  = State()
+    waiting_admin_id         = State()
 
 
 class FixDistrict(StatesGroup):
