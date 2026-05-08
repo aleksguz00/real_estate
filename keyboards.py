@@ -90,7 +90,16 @@ def main_menu_kb(lang: str = "ru", is_admin: bool = False) -> InlineKeyboardMark
         [InlineKeyboardButton(text=t("btn_contact", lang),       callback_data="contact_us")],
     ]
     if is_admin:
-        rows.append([InlineKeyboardButton(text=t("btn_admin", lang), callback_data="admin_panel")])
+        rows.append([
+            InlineKeyboardButton(
+                text="📝 Просмотр" if lang == "ru" else "📝 Viewing",
+                callback_data="admin_add_viewing",
+            ),
+            InlineKeyboardButton(
+                text="⚙️ Админпанель" if lang == "ru" else "⚙️ Admin",
+                callback_data="admin_panel",
+            ),
+        ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -406,6 +415,10 @@ def admin_panel_kb(lang: str = "ru") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📊 Статистика",      callback_data="admin_stats")],
         [InlineKeyboardButton(text="👥 Клиенты",         callback_data="admin_clients")],
         [InlineKeyboardButton(text="📤 Рассылка",        callback_data="admin_broadcast")],
+        [InlineKeyboardButton(
+            text="📝 Добавить просмотр" if lang == "ru" else "📝 Add viewing",
+            callback_data="admin_add_viewing",
+        )],
         [
             InlineKeyboardButton(
                 text="👤 Добавить админа" if lang == "ru" else "👤 Add admin",

@@ -1018,6 +1018,9 @@ def build_filters_from_state(data: dict, telegram_id: int = None) -> dict:
     if data.get("district"):
         filters["district"] = data["district"]
 
+    if data.get("address"):
+        filters["address"] = data["address"]
+
     if data.get("rooms"):
         rooms = data["rooms"]
         if isinstance(rooms, str):
@@ -1628,6 +1631,163 @@ async def handle_broadcast(message: Message, state: FSMContext):
     await state.set_state(None)
     # TODO: разослать всем пользователям
     await message.answer("✅ Рассылка запущена!", disable_notification=True)
+
+
+@router.callback_query(F.data == "admin_add_viewing")
+async def admin_add_viewing(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+    await callback.answer()
+    await state.set_state(AdminState.waiting_viewing_source_code)
+    await callback.message.answer(
+        "📝 <b>Добавление просмотра</b>\n\n"
+        "Введите номер объекта:\n"
+        "Например: 2344АК",
+        disable_notification=True,
+    )
+
+
+@router.message(AdminState.waiting_viewing_source_code)
+async def viewing_source_code(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    source_code = message.text.strip().upper()
+
+    from db import pool
+    async with pool.acquire() as conn:
+        prop = await conn.fetchrow(
+            "SELECT id, source_code, address FROM properties WHERE UPPER(source_code) = $1",
+            source_code
+        )
+
+    if prop:
+        await state.update_data(
+            manual_prop_id=prop["id"],
+            manual_source_code=prop["source_code"],
+            manual_address=prop["address"],
+        )
+        await state.set_state(AdminState.waiting_viewing_client_info)
+        await message.answer(
+            f"✅ Объект найден: {prop['source_code']} | {prop['address']}\n\n"
+            f"Введите данные клиента:\n"
+            f"Имя и телефон через пробел\n"
+            f"Например: Андрей +995599123456",
+            disable_notification=True,
+        )
+    else:
+        await state.update_data(
+            manual_prop_id=None,
+            manual_source_code=source_code,
+            manual_address="",
+        )
+        await state.set_state(AdminState.waiting_viewing_client_info)
+        await message.answer(
+            f"⚠️ Объект {source_code} не найден в базе, но запишем.\n\n"
+            f"Введите данные клиента:\n"
+            f"Имя и телефон через пробел\n"
+            f"Например: Андрей +995599123456",
+            disable_notification=True,
+        )
+
+
+@router.message(AdminState.waiting_viewing_client_info)
+async def viewing_client_info(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+
+    text = message.text.strip()
+
+    import re
+    phone_match = re.search(r'[\+]?[\d\s\-\(\)]{7,}', text)
+    if phone_match:
+        phone = re.sub(r'[^\d+]', '', phone_match.group())
+        name = text[:phone_match.start()].strip()
+        if not name:
+            name = text[phone_match.end():].strip()
+    else:
+        name = text
+        phone = ""
+
+    if not name:
+        name = "Не указано"
+
+    await state.update_data(
+        manual_client_name=name,
+        manual_client_phone=phone,
+    )
+    await state.set_state(AdminState.waiting_viewing_manual_datetime)
+    await message.answer(
+        f"👤 Клиент: {name}\n"
+        f"📱 Телефон: {phone or '—'}\n\n"
+        f"Введите дату и время просмотра:\n"
+        f"Например: 15.05.2026 14:00",
+        disable_notification=True,
+    )
+
+
+@router.message(AdminState.waiting_viewing_manual_datetime)
+async def viewing_manual_datetime(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+
+    data = await state.get_data()
+    datetime_str = message.text.strip()
+    source_code = data.get("manual_source_code", "")
+    address = data.get("manual_address", "")
+    prop_id = data.get("manual_prop_id")
+    client_name = data.get("manual_client_name", "")
+    client_phone = data.get("manual_client_phone", "")
+
+    from datetime import datetime as dt
+    try:
+        parsed_dt = dt.strptime(datetime_str, "%d.%m.%Y %H:%M")
+        date_str = parsed_dt.strftime("%d.%m.%Y")
+        time_str = parsed_dt.strftime("%H:%M")
+    except Exception:
+        await message.answer("❌ Неверный формат. Введите: 15.05.2026 14:00")
+        return
+
+    try:
+        import gspread
+        from oauth2client.service_account import ServiceAccountCredentials
+
+        scope = ["https://spreadsheets.google.com/feeds",
+                 "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_name(
+            "api_google.json", scope
+        )
+        gs_client = gspread.authorize(creds)
+
+        CLIENTS_SHEET_ID = "1qLTfGYzFqCe5etYWeb5fYpDP_CJfQ5UBUKiU9Sed48E"
+        spreadsheet = gs_client.open_by_key(CLIENTS_SHEET_ID)
+        viewings_sheet = spreadsheet.worksheet("Просмотры")
+
+        now = dt.now().strftime("%d.%m.%Y %H:%M")
+        prop_info = f"{source_code} | {address}" if address else source_code
+
+        viewings_sheet.append_row([
+            now,          # A — Дата записи
+            "",           # B — Telegram ID
+            client_name,  # C — Имя клиента
+            client_phone, # D — Телефон
+            prop_info,    # E — Объект
+            date_str,     # F — Дата просмотра
+            time_str,     # G — Время просмотра
+            "Назначен",   # H — Статус
+        ])
+    except Exception as e:
+        logger.error(f"Manual viewing sheet error: {e}")
+
+    await state.set_state(None)
+    await message.answer(
+        f"✅ Просмотр записан!\n\n"
+        f"🏠 Объект: {source_code} {address}\n"
+        f"👤 Клиент: {client_name}\n"
+        f"📱 Телефон: {client_phone or '—'}\n"
+        f"📅 Дата: {date_str} в {time_str}",
+        disable_notification=True,
+    )
 
 
 @router.callback_query(F.data == "admin_add")
