@@ -466,7 +466,8 @@ async def fix_district_set(callback: CallbackQuery, state: FSMContext):
             district, address,
         )
 
-    cache_file = "/Users/fixdive/real_estate/district_cache.json"
+    import os
+    cache_file = os.path.join(os.path.dirname(__file__), "district_cache.json")
     try:
         with open(cache_file, encoding="utf-8") as f:
             cache = json.load(f)
