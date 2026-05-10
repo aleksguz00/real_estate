@@ -25,7 +25,7 @@ router = Router()
 # Паттерн старого формата хранения фото: "channel_id:msg_id"
 _CHANNEL_REF = re.compile(r"^-?\d+:\d+$")
 
-WELCOME_PHOTO = "AgACAgIAAxkBAAILMWnzz-iCdzgaAAGMWhluyR3c4qsyQQACJBdrG_DNoUvZB40620efuQEAAwIAA3cAAzsE"
+WELCOME_PHOTO = "AgACAgIAAxkBAAMEagABg71fc1ExG3RhJ3jbzg3TAVwpAAKDFmsbKeAAAUhmegdxqjckJQEAAwIAA3gAAzsE"
 CHANNEL_USERNAME = "BatumiHome24"
 CHANNEL_URL = "https://t.me/BatumiHome24"
 OPERATOR_IDS = [7572451975, 8154802423]
