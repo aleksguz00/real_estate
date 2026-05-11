@@ -12,7 +12,6 @@ class FilterState(StatesGroup):
     choosing_area       = State()
     area_manual_input   = State()
     choosing_type       = State()
-    choosing_land       = State()
     choosing_district   = State()
     entering_address    = State()
     choosing_budget     = State()

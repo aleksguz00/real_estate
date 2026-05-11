@@ -233,7 +233,7 @@ def deal_type_kb(selected_deal: str | None = None, selected_props: list | None =
 
     prop_items = [
         ("apartment", "btn_apartment"), ("house", "btn_house"),
-        ("land", "btn_land"), ("commercial", "btn_commercial"),
+        ("commercial", "btn_commercial"),
     ]
     prop_rows = []
     for i in range(0, len(prop_items), 2):
@@ -251,15 +251,6 @@ def deal_type_kb(selected_deal: str | None = None, selected_props: list | None =
         ],
     ])
 
-
-def land_type_kb(selected: str | None = None, lang: str = "ru") -> InlineKeyboardMarkup:
-    items = [("land_agri", "btn_land_agri"), ("land_non_agri", "btn_land_non_agri")]
-    rows = []
-    for key, text_key in items:
-        mark = "✅ " if key == selected else ""
-        rows.append([InlineKeyboardButton(text=f"{mark}{t(text_key, lang)}", callback_data=f"land_{key}")])
-    rows.append([InlineKeyboardButton(text=t("btn_back", lang), callback_data="filter_type")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

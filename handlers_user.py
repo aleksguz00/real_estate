@@ -11,7 +11,7 @@ from aiogram.fsm.context import FSMContext
 
 from keyboards import (
     language_kb, subscription_kb, main_menu_kb, search_dashboard_kb,
-    fresh_kb, rooms_kb, area_kb, deal_type_kb, land_type_kb,
+    fresh_kb, rooms_kb, area_kb, deal_type_kb,
     district_kb, budget_kb, features_kb, heating_kb, property_card_kb,
     favorites_kb, admin_panel_kb, skip_kb,
     PRICE_RANGES_RENT, PRICE_RANGES_SALE, FRESHNESS_OPTIONS,
@@ -491,10 +491,6 @@ async def set_prop_type(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_reply_markup(
             reply_markup=deal_type_kb(data.get("deal_type"), selected, lang)
         )
-    elif prop == "land":
-        await state.update_data(prop_types=["land"], land_type=None)
-        await state.set_state(FilterState.choosing_land)
-        await callback.message.edit_reply_markup(reply_markup=land_type_kb(lang=lang))
     else:
         if prop in selected:
             selected.remove(prop)
@@ -525,33 +521,6 @@ async def back_from_type(callback: CallbackQuery, state: FSMContext):
     lang = data.get("lang", "ru")
     await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
     await callback.answer()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ТИП ЗЕМЛИ
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.callback_query(FilterState.choosing_land, F.data.startswith("land_"))
-async def set_land_type(callback: CallbackQuery, state: FSMContext):
-    land = callback.data.replace("land_", "")
-    await state.update_data(land_type=land)
-    await state.set_state(None)
-    data = await state.get_data()
-    lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
-    await callback.answer()
-
-
-@router.callback_query(FilterState.choosing_land, F.data == "filter_type")
-async def back_from_land(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(FilterState.choosing_type)
-    data = await state.get_data()
-    lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(
-        reply_markup=deal_type_kb(data.get("deal_type"), data.get("prop_types", []), lang)
-    )
-    await callback.answer()
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -596,6 +565,13 @@ async def set_address(message: Message, state: FSMContext):
     label = address[:12] + "..." if len(address) > 12 else address
     await state.update_data(address=address, address_label=label)
     await message.delete()
+    try:
+        await message.bot.delete_message(
+            chat_id=message.chat.id,
+            message_id=message.message_id - 1,
+        )
+    except:
+        pass
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
