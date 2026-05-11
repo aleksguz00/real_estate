@@ -102,6 +102,11 @@ class ChannelParser:
                 "media_group_id": str(msg.grouped_id) if msg.grouped_id else None,
             })
 
+            # Проверяем статус — если "сдано" то деактивируем
+            text_lower = (data.get("text") or "").lower()
+            if "сдано" in text_lower or "сдан" in text_lower or "продано" in text_lower:
+                data["is_active"] = False
+
             # Сохраняем в БД
             prop_id = await save_property(data)
             logger.info(f"✅ Объект #{prop_id} сохранён [{data.get('source_code', '')}]")
