@@ -191,9 +191,12 @@ async def get_property_ids(filters: dict) -> list[int]:
         params.append(filters["district"])
         i += 1
     if filters.get("address"):
-        conditions.append(f"address ILIKE '%' || ${i} || '%'")
-        params.append(filters["address"])
-        i += 1
+        words = filters["address"].strip().split()
+        for word in words:
+            if len(word) >= 2:
+                conditions.append(f"address ILIKE '%' || ${i} || '%'")
+                params.append(word)
+                i += 1
     if filters.get("price_min") is not None:
         conditions.append(f"price >= ${i}")
         params.append(filters["price_min"])
@@ -274,9 +277,12 @@ async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> lis
         i += 1
 
     if filters.get("address"):
-        conditions.append(f"address ILIKE '%' || ${i} || '%'")
-        params.append(filters["address"])
-        i += 1
+        words = filters["address"].strip().split()
+        for word in words:
+            if len(word) >= 2:
+                conditions.append(f"address ILIKE '%' || ${i} || '%'")
+                params.append(word)
+                i += 1
 
     if filters.get("price_min") is not None:
         conditions.append(f"price >= ${i}")
