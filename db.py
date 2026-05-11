@@ -192,9 +192,18 @@ async def get_property_ids(filters: dict) -> list[int]:
         i += 1
     if filters.get("address"):
         addr = filters["address"].strip()
-        conditions.append(f"address ILIKE '%' || ${i} || '%'")
-        params.append(addr)
-        i += 1
+        words = addr.split()
+        for word in words:
+            if len(word) >= 3:
+                conditions.append(
+                    f"REPLACE(REPLACE(REPLACE(address, ',', ' '), '.', ' '), '-', ' ') ILIKE '%' || ${i} || '%'"
+                )
+                params.append(word)
+                i += 1
+            elif word.isdigit():
+                conditions.append(f"address ~ ('\\y' || ${i} || '\\y')")
+                params.append(word)
+                i += 1
     if filters.get("price_min") is not None:
         conditions.append(f"price >= ${i}")
         params.append(filters["price_min"])
@@ -276,9 +285,18 @@ async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> lis
 
     if filters.get("address"):
         addr = filters["address"].strip()
-        conditions.append(f"address ILIKE '%' || ${i} || '%'")
-        params.append(addr)
-        i += 1
+        words = addr.split()
+        for word in words:
+            if len(word) >= 3:
+                conditions.append(
+                    f"REPLACE(REPLACE(REPLACE(address, ',', ' '), '.', ' '), '-', ' ') ILIKE '%' || ${i} || '%'"
+                )
+                params.append(word)
+                i += 1
+            elif word.isdigit():
+                conditions.append(f"address ~ ('\\y' || ${i} || '\\y')")
+                params.append(word)
+                i += 1
 
     if filters.get("price_min") is not None:
         conditions.append(f"price >= ${i}")
