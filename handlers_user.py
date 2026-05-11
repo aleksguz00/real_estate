@@ -1312,7 +1312,7 @@ async def show_subscriptions(callback: CallbackQuery, state: FSMContext):
     for i, sub in enumerate(subs):
         parts = []
         if sub["deal_type"]:
-            parts.append("Аренда" if sub["deal_type"] == "rent" else "Продажа")
+            parts.append("Аренда" if sub["deal_type"] == "rent" else "Покупка")
         if sub.get("district"):
             parts.append(f"Район: {', '.join(sub['district'])}")
         if sub.get("price_min") or sub.get("price_max"):
@@ -1371,7 +1371,7 @@ async def subscribe(callback: CallbackQuery, state: FSMContext):
 
     desc_parts = []
     if filters.get("deal_type"):
-        desc_parts.append("Аренда" if filters["deal_type"] == "rent" else "Продажа")
+        desc_parts.append("Аренда" if filters["deal_type"] == "rent" else "Покупка")
     if filters.get("rooms"):
         desc_parts.append(f"Комнаты: {', '.join(filters['rooms'])}")
     if filters.get("district"):

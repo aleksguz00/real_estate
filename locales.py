@@ -33,7 +33,7 @@ TEXTS = {
 
         # ── Тип сделки ───────────────────────────────────────────
         "btn_rent":          "🔑 Аренда",
-        "btn_sale":          "💰 Продажа",
+        "btn_sale":          "💰 Покупка",
         "btn_apartment":     "🏢 Квартира",
         "btn_house":         "🏡 Дом",
         "btn_land":          "🏔 Земельный участок",
@@ -59,7 +59,7 @@ TEXTS = {
 
         # ── Бюджет ───────────────────────────────────────────────
         "enter_budget":      "✏️ Введите диапазон цен, например: 400-600",
-        "budget_no_type":    "⚠️ Сначала выберите Аренда или Продажа в разделе Тип",
+        "budget_no_type":    "⚠️ Сначала выберите Аренда или Покупка в разделе Тип",
 
         # ── Адрес ────────────────────────────────────────────────
         "enter_address":     "🏠 Введите адрес для поиска:\n<i>например: Руставели 23 или Химшиашвили 5</i>",
@@ -161,7 +161,7 @@ TEXTS = {
 
         # ── Deal type ────────────────────────────────────────────
         "btn_rent":          "🔑 Rent",
-        "btn_sale":          "💰 Sale",
+        "btn_sale":          "💰 Purchase",
         "btn_apartment":     "🏢 Apartment",
         "btn_house":         "🏡 House",
         "btn_land":          "🏔 Land plot",
@@ -187,7 +187,7 @@ TEXTS = {
 
         # ── Budget ───────────────────────────────────────────────
         "enter_budget":      "✏️ Enter price range, e.g.: 400-600",
-        "budget_no_type":    "⚠️ Please select Rent or Sale in the Type section first",
+        "budget_no_type":    "⚠️ Please select Rent or Purchase in the Type section first",
 
         # ── Address ──────────────────────────────────────────────
         "enter_address":     "🏠 Enter address to search:\n<i>e.g.: Rustaveli 23 or Khimshiashvili 5</i>",
