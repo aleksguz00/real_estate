@@ -260,7 +260,7 @@ class ChannelParser:
 
     async def get_album_photo_ids(self, channel_id: int, message_id: int) -> list[str]:
         """Вернуть channel_id:msg_id всех фото в альбоме по одному сообщению."""
-        try:
+        async def _fetch():
             msg = await self.client.get_messages(channel_id, ids=message_id)
             if not msg:
                 return []
@@ -277,9 +277,24 @@ class ChannelParser:
                 return [f"{channel_id}:{m.id}" for m in album]
             elif msg.photo:
                 return [f"{channel_id}:{message_id}"]
+            return []
+
+        try:
+            if not self.client.is_connected():
+                logger.warning("Telethon disconnected, reconnecting...")
+                await self.client.connect()
+            return await _fetch()
+        except ConnectionError as e:
+            logger.warning(f"Telethon connection error, reconnecting: {e}")
+            try:
+                await self.client.connect()
+                return await _fetch()
+            except Exception as e2:
+                logger.error(f"Reconnect failed: {e2}")
+                return []
         except Exception as e:
             logger.error(f"get_album_photo_ids error: {e}")
-        return []
+            return []
 
     async def fetch_history_since_days(self, days: int = 90):
         """Загрузить все посты за последние N дней из всех каналов."""
