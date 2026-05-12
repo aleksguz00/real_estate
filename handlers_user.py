@@ -721,6 +721,15 @@ async def budget_manual_input(message: Message, state: FSMContext):
         price_min=price_min, price_max=price_max,
     )
     await message.delete()
+    # Удаляем подсказку "Введите диапазон цен"
+    try:
+        prompt_msg_id = message.message_id - 1
+        await message.bot.delete_message(
+            chat_id=message.chat.id,
+            message_id=prompt_msg_id,
+        )
+    except:
+        pass
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")

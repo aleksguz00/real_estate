@@ -111,7 +111,12 @@ async def save_property(data: dict) -> int:
                 features      = EXCLUDED.features,
                 photos        = EXCLUDED.photos,
                 text          = EXCLUDED.text,
-                is_active     = EXCLUDED.is_active,
+                is_active     = CASE
+                    WHEN LOWER(EXCLUDED.text) LIKE '%сдано%'
+                      OR LOWER(EXCLUDED.text) LIKE '%продано%'
+                    THEN FALSE
+                    ELSE EXCLUDED.is_active
+                END,
                 updated_at    = NOW()
             RETURNING id
         """,
