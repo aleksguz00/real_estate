@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import ErrorEvent
 
 from config import BOT_TOKEN
 from db import init_db
@@ -43,6 +44,18 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()
+
+    @dp.error()
+    async def errors_handler(event: ErrorEvent):
+        import traceback
+        exception = event.exception
+        error_msg = f"❌ Ошибка в боте:\n\n{type(exception).__name__}: {str(exception)[:500]}"
+        logger.error(f"Bot error: {exception}\n{traceback.format_exc()}")
+        try:
+            await bot.send_message(chat_id=7572451975, text=error_msg[:4000])
+        except:
+            pass
+        return True
 
     # Роутеры
     dp.include_router(user_router)

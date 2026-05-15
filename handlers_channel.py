@@ -18,6 +18,20 @@ from utils import parse_post, SOLD_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
+OPERATOR_ID = 7572451975
+
+
+async def _send_critical_alert(text: str):
+    try:
+        from aiogram import Bot
+        from config import BOT_TOKEN
+        alert_bot = Bot(token=BOT_TOKEN)
+        await alert_bot.send_message(chat_id=OPERATOR_ID, text=text)
+        await alert_bot.session.close()
+    except Exception:
+        pass
+
+
 # Сессия Telethon (файл сохраняется рядом с ботом)
 SESSION_NAME = "kaufman_parser"
 
@@ -40,6 +54,7 @@ class ChannelParser:
     async def start(self):
         await self.client.start()
         logger.info("✅ Telethon клиент запущен")
+        asyncio.create_task(keep_telethon_alive(self.client))
         self._register_handlers()
 
     async def stop(self):
@@ -291,8 +306,12 @@ class ChannelParser:
                 return await _fetch()
             except Exception as e2:
                 logger.error(f"Reconnect failed: {e2}")
+                await _send_critical_alert(f"🚨 Telethon reconnect failed:\n{str(e2)[:500]}")
                 return []
         except Exception as e:
+            error_text = str(e).lower()
+            if any(kw in error_text for kw in ['disconnected', 'authkey', 'readonly', 'i/o error']):
+                await _send_critical_alert(f"🚨 Критическая ошибка Telethon:\n{str(e)[:500]}")
             logger.error(f"get_album_photo_ids error: {e}")
             return []
 
@@ -367,6 +386,23 @@ class ChannelParser:
 # ─────────────────────────────────────────────────────────────────────────────
 # Глобальный экземпляр парсера
 # ─────────────────────────────────────────────────────────────────────────────
+
+async def keep_telethon_alive(client):
+    """Проверяет соединение Telethon каждые 5 минут."""
+    while True:
+        try:
+            await asyncio.sleep(300)
+            if not client.is_connected():
+                logger.warning("Telethon disconnected, reconnecting...")
+                await client.connect()
+                logger.info("Telethon reconnected!")
+        except Exception as e:
+            logger.error(f"Keep alive error: {e}")
+            try:
+                await client.connect()
+            except:
+                pass
+
 
 parser: ChannelParser | None = None
 
