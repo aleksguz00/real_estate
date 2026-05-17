@@ -55,7 +55,52 @@ class ChannelParser:
         await self.client.start()
         logger.info("✅ Telethon клиент запущен")
         asyncio.create_task(keep_telethon_alive(self.client))
+        asyncio.create_task(self._periodic_status_check())
         self._register_handlers()
+
+    async def _periodic_status_check(self):
+        """Раз в час проверяет все активные объекты на статус Сдано."""
+        from db import pool
+
+        while True:
+            try:
+                await asyncio.sleep(3600)
+                logger.info("[status_check] Начало проверки статуса объектов")
+
+                async with pool.acquire() as conn:
+                    props = await conn.fetch("""
+                        SELECT id, source_channel, message_id, source_code
+                        FROM properties
+                        WHERE is_active = TRUE
+                        ORDER BY id DESC
+                        LIMIT 500
+                    """)
+
+                deactivated = 0
+                for prop in props:
+                    try:
+                        msg = await self.client.get_messages(
+                            prop["source_channel"],
+                            ids=prop["message_id"]
+                        )
+                        if msg and msg.text:
+                            text_lower = msg.text.lower()
+                            if "сдано" in text_lower or "продано" in text_lower:
+                                async with pool.acquire() as conn:
+                                    await conn.execute(
+                                        "UPDATE properties SET is_active = FALSE, text = $1 WHERE id = $2",
+                                        msg.text, prop["id"]
+                                    )
+                                deactivated += 1
+                                logger.info(f"[status_check] Деактивирован {prop['source_code']} (id={prop['id']})")
+                        await asyncio.sleep(0.1)
+                    except Exception as e:
+                        logger.warning(f"[status_check] Ошибка для id={prop['id']}: {e}")
+                        continue
+
+                logger.info(f"[status_check] Завершено. Деактивировано: {deactivated}")
+            except Exception as e:
+                logger.error(f"[status_check] Критическая ошибка: {e}")
 
     async def stop(self):
         await self.client.disconnect()
