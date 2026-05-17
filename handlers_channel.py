@@ -72,10 +72,10 @@ class ChannelParser:
                         FROM properties
                         WHERE is_active = TRUE
                         ORDER BY id DESC
-                        LIMIT 500
                     """)
 
                 deactivated = 0
+                checked = 0
                 for prop in props:
                     try:
                         msg = await self.client.get_messages(
@@ -92,7 +92,10 @@ class ChannelParser:
                                     )
                                 deactivated += 1
                                 logger.info(f"[status_check] Деактивирован {prop['source_code']} (id={prop['id']})")
-                        await asyncio.sleep(0.1)
+                        checked += 1
+                        if checked % 100 == 0:
+                            logger.info(f"[status_check] Прогресс: {checked}/{len(props)}, деактивировано: {deactivated}")
+                        await asyncio.sleep(0.3)
                     except Exception as e:
                         logger.warning(f"[status_check] Ошибка для id={prop['id']}: {e}")
                         continue
