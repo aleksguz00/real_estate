@@ -28,7 +28,7 @@ def check_single_instance():
     """Проверяет что бот не запущен в другом процессе."""
     import subprocess
     result = subprocess.run(
-        ['pgrep', '-f', 'bot.py'],
+        ['pgrep', '-f', 'kaufman_estate/bot.py'],
         capture_output=True, text=True
     )
     pids = [p for p in result.stdout.strip().split('\n') if p and p != str(os.getpid())]
