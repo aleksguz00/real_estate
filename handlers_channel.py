@@ -64,7 +64,6 @@ class ChannelParser:
 
         while True:
             try:
-                await asyncio.sleep(3600)
                 logger.info("[status_check] Начало проверки статуса объектов")
 
                 async with pool.acquire() as conn:
@@ -99,8 +98,10 @@ class ChannelParser:
                         continue
 
                 logger.info(f"[status_check] Завершено. Деактивировано: {deactivated}")
+                await asyncio.sleep(3600)
             except Exception as e:
                 logger.error(f"[status_check] Критическая ошибка: {e}")
+                await asyncio.sleep(3600)
 
     async def stop(self):
         await self.client.disconnect()
