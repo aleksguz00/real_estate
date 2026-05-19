@@ -11,6 +11,7 @@ from datetime import datetime
 
 from telethon import TelegramClient, events
 from telethon.tl.types import Message, MessageMediaPhoto, MessageMediaDocument
+from telethon.errors.rpcerrorlist import AuthKeyDuplicatedError
 
 from config import API_ID, API_HASH, CHANNEL_RENT, CHANNEL_SALE
 from db import save_property, deactivate_property, get_subscriptions_for_property, get_user_id
@@ -96,6 +97,13 @@ class ChannelParser:
                         if checked % 100 == 0:
                             logger.info(f"[status_check] Прогресс: {checked}/{len(props)}, деактивировано: {deactivated}")
                         await asyncio.sleep(0.3)
+                    except AuthKeyDuplicatedError as e:
+                        logger.critical(f"[status_check] AuthKeyDuplicatedError: {e}")
+                        await _send_critical_alert(
+                            "🚨 Telethon сессия инвалидирована (AuthKeyDuplicatedError)!\n"
+                            "Нужно пересоздать сессию на сервере."
+                        )
+                        return
                     except Exception as e:
                         logger.warning(f"[status_check] Ошибка для id={prop['id']}: {e}")
                         continue
@@ -348,6 +356,12 @@ class ChannelParser:
                 logger.warning("Telethon disconnected, reconnecting...")
                 await self.client.connect()
             return await _fetch()
+        except AuthKeyDuplicatedError as e:
+            logger.critical(f"AuthKeyDuplicatedError в get_album_photo_ids: {e}")
+            await _send_critical_alert(
+                "🚨 Telethon сессия инвалидирована! Нужно пересоздать сессию на сервере."
+            )
+            return []
         except ConnectionError as e:
             logger.warning(f"Telethon connection error, reconnecting: {e}")
             try:
@@ -445,6 +459,12 @@ async def keep_telethon_alive(client):
                 logger.warning("Telethon disconnected, reconnecting...")
                 await client.connect()
                 logger.info("Telethon reconnected!")
+        except AuthKeyDuplicatedError as e:
+            logger.critical(f"AuthKeyDuplicatedError в keep_telethon_alive: {e}")
+            await _send_critical_alert(
+                "🚨 Telethon сессия инвалидирована (AuthKeyDuplicatedError)!\n"
+                "Нужно пересоздать сессию на сервере."
+            )
         except Exception as e:
             logger.error(f"Keep alive error: {e}")
             try:
