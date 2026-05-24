@@ -21,3 +21,8 @@ all_addresses.txt
 check.csv
 gis_cache.json
 gis_counter.json
+
+# одноразовые скрипты и бэкапы — не в git
+run_recheck_district.py
+*.json.bak
+*.bak
