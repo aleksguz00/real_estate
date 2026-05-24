@@ -109,7 +109,12 @@ async def save_property(data: dict) -> int:
                 floors_total  = EXCLUDED.floors_total,
                 heating       = EXCLUDED.heating,
                 features      = EXCLUDED.features,
-                photos        = EXCLUDED.photos,
+                photos        = CASE
+                    WHEN EXCLUDED.photos IS NULL
+                      OR array_length(EXCLUDED.photos, 1) IS NULL
+                    THEN properties.photos
+                    ELSE EXCLUDED.photos
+                END,
                 text          = EXCLUDED.text,
                 is_active     = CASE
                     WHEN LOWER(EXCLUDED.text) LIKE '%сдано%'

@@ -129,7 +129,7 @@ class ChannelParser:
 
         @self.client.on(events.MessageEdited(chats=list(CHANNELS.keys())))
         async def on_edited_message(event):
-            await self._process_message(event.message, event.chat_id)
+            await self._process_message(event.message, event.chat_id, is_edit=True)
 
         @self.client.on(events.MessageDeleted(chats=list(CHANNELS.keys())))
         async def on_deleted_message(event):
@@ -143,7 +143,7 @@ class ChannelParser:
     # Обработка одного сообщения
     # ─────────────────────────────────────────────────────────────────────
 
-    async def _process_message(self, msg: Message, channel_id: int):
+    async def _process_message(self, msg: Message, channel_id: int, is_edit: bool = False):
         """Обработать одно сообщение из канала."""
         text = msg.text or ""
         if not text and hasattr(msg, 'file') and msg.file:
@@ -198,26 +198,27 @@ class ChannelParser:
                     logger.warning(f"Geocode error for #{prop_id}: {e}")
 
             # Проверяем подписки и уведомляем
-            try:
-                from db import get_subscriptions_for_property
-                subscribers = await get_subscriptions_for_property(data)
-                if subscribers:
-                    from handlers_user import format_property_card, _send_photos_to
-                    card_text = format_property_card(data)
-                    for sub in subscribers:
-                        try:
-                            if data.get("photos"):
-                                await _send_photos_to(self.bot, sub["telegram_id"], data)
-                            await self.bot.send_message(
-                                chat_id=sub["telegram_id"],
-                                text=f"🔔 <b>Новый объект по вашей подписке!</b>\n\n{card_text}",
-                                disable_web_page_preview=True,
-                            )
-                        except Exception as e:
-                            logger.error(f"Subscription notify error for {sub['telegram_id']}: {e}")
-                    logger.info(f"Уведомлено {len(subscribers)} подписчиков")
-            except Exception as e:
-                logger.error(f"Subscriptions check error: {e}")
+            if not is_edit:
+                try:
+                    from db import get_subscriptions_for_property
+                    subscribers = await get_subscriptions_for_property(data)
+                    if subscribers:
+                        from handlers_user import format_property_card, _send_photos_to
+                        card_text = format_property_card(data)
+                        for sub in subscribers:
+                            try:
+                                if data.get("photos"):
+                                    await _send_photos_to(self.bot, sub["telegram_id"], data)
+                                await self.bot.send_message(
+                                    chat_id=sub["telegram_id"],
+                                    text=f"🔔 <b>Новый объект по вашей подписке!</b>\n\n{card_text}",
+                                    disable_web_page_preview=True,
+                                )
+                            except Exception as e:
+                                logger.error(f"Subscription notify error for {sub['telegram_id']}: {e}")
+                        logger.info(f"Уведомлено {len(subscribers)} подписчиков")
+                except Exception as e:
+                    logger.error(f"Subscriptions check error: {e}")
 
         except Exception as e:
             logger.error(f"Ошибка при обработке сообщения {msg.id}: {e}")
