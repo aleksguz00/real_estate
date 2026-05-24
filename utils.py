@@ -350,6 +350,19 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
     if not address or not YANDEX_GEOCODER_KEY:
         return None, None, None
 
+    cached_district = None
+    try:
+        import os as _os, json as _json
+        _cache_file = _os.path.join(_os.path.dirname(__file__), "district_cache.json")
+        if _os.path.exists(_cache_file):
+            with open(_cache_file, encoding="utf-8") as _f:
+                _cache = _json.load(_f)
+            _val = _cache.get(address)
+            if _val is not None:
+                cached_district = _val
+    except Exception:
+        cached_district = None
+
     address_full = address
     address_full = re.sub(r'\bул\.\s*', 'улица ', address_full)
     address_full = re.sub(r'\bпросп\.\s*', 'проспект ', address_full)
@@ -371,13 +384,13 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
-                    return find_district_by_street(None, address), None, None
+                    return cached_district or find_district_by_street(None, address), None, None
                 data = await resp.json()
 
         collection = data["response"]["GeoObjectCollection"]
         members = collection.get("featureMember", [])
         if not members:
-            return find_district_by_street(None, address), None, None
+            return cached_district or find_district_by_street(None, address), None, None
 
         geo = members[0]["GeoObject"]
 
@@ -398,12 +411,12 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
                 street = comp.get("name")
                 break
 
-        # Определяем район по улице
-        district = find_district_by_street(street, address)
+        # Определяем район по улице (кэш имеет приоритет над rapidfuzz)
+        district = cached_district or find_district_by_street(street, address)
 
         import logging as _logging
         _logging.getLogger(__name__).info(
-            f"[geocode] street={street!r} → district={district!r} | lat={lat} lon={lon}"
+            f"[geocode] street={street!r} → district={district!r} (cached={cached_district!r}) | lat={lat} lon={lon}"
         )
 
         return district, lat, lon
@@ -411,7 +424,7 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
     except Exception as e:
         import logging as _logging
         _logging.getLogger(__name__).error(f"[geocode] Ошибка: {e}")
-        return find_district_by_street(None, address), None, None
+        return cached_district or find_district_by_street(None, address), None, None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
