@@ -2087,6 +2087,13 @@ async def op_owner(callback: CallbackQuery):
         await callback.message.answer("❌ Объект не найден", disable_notification=True)
         return
 
+    if not prop["source_code"]:
+        await callback.message.answer(
+            "ℹ️ У этого объекта нет кода — телефон владельца в базе найти нельзя.",
+            disable_notification=True,
+        )
+        return
+
     from google_sheets import get_owner_phone
     phone = await get_owner_phone(prop["source_code"], prop["deal_type"])
 
@@ -2131,6 +2138,13 @@ async def op_check(callback: CallbackQuery):
 
     if not prop:
         await callback.message.answer("❌ Объект не найден", disable_notification=True)
+        return
+
+    if not prop["source_code"]:
+        await callback.message.answer(
+            "ℹ️ У этого объекта нет кода — телефон владельца в базе найти нельзя.",
+            disable_notification=True,
+        )
         return
 
     from google_sheets import get_owner_phone
