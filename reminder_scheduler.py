@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -8,7 +9,7 @@ logger = logging.getLogger(__name__)
 async def check_reminders(bot):
     while True:
         try:
-            now = datetime.now()
+            now = datetime.now(ZoneInfo("Asia/Tbilisi"))
             # Не отправляем ночью (22:00 - 09:00)
             if now.hour >= 22 or now.hour < 9:
                 await asyncio.sleep(60)
@@ -19,7 +20,7 @@ async def check_reminders(bot):
                 reminders = await conn.fetch("""
                     SELECT * FROM reminders
                     WHERE reminded = FALSE
-                    AND reminder_dt <= NOW()
+                    AND reminder_dt <= (NOW() AT TIME ZONE 'Asia/Tbilisi')
                 """)
 
                 for r in reminders:
