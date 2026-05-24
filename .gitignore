@@ -19,3 +19,5 @@ get_streets.py
 test_2gis.py
 all_addresses.txt
 check.csv
+gis_cache.json
+gis_counter.json

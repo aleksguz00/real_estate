@@ -3,9 +3,12 @@
 Утилиты для извлечения данных из текста объявлений.
 """
 
+import datetime
+import json
+import os
 import re
 import aiohttp
-from config import YANDEX_GEOCODER_KEY
+from config import YANDEX_GEOCODER_KEY, GIS_API_KEY
 
 # ─────────────────────────────────────────────────────────────────────────────
 # СТОП-СЛОВА — объект снят с рынка
@@ -339,6 +342,112 @@ def clean_text(text: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 2ГИС ГЕОКОДЕР — определение района по грузинскому названию
+# ─────────────────────────────────────────────────────────────────────────────
+
+GEO_TO_RU = {
+    "ძველი ბათუმი": "Старый Батуми",
+    "ხიმშიაშვილი": "Химшиашвили",
+    "რუსთაველი": "Руставели",
+    "ბაგრატიონი": "Багратиони",
+    "აღმაშენებელი": "Агмашенебели",
+    "ჯავახიშვილი": "Джавахишвили",
+    "თამარი": "Тамар",
+    "ბონი დასახლება": "Бони Городок",
+    "აეროპორტი": "Аэропорт",
+    "ყაჩაბეთი": "Кахабери",
+    "მახინჯაური": "Махинджаური",
+}
+
+_GIS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "gis_cache.json")
+_GIS_COUNTER_FILE = os.path.join(os.path.dirname(__file__), "gis_counter.json")
+GIS_DAILY_LIMIT = 100
+
+
+def _gis_calls_today() -> int:
+    try:
+        with open(_GIS_COUNTER_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("date") == datetime.date.today().isoformat():
+            return int(data.get("count", 0))
+        return 0
+    except Exception:
+        return 0
+
+
+def _gis_increment() -> None:
+    try:
+        today = datetime.date.today().isoformat()
+        try:
+            with open(_GIS_COUNTER_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+        if data.get("date") == today:
+            data["count"] = int(data.get("count", 0)) + 1
+        else:
+            data = {"date": today, "count": 1}
+        with open(_GIS_COUNTER_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _load_gis_cache() -> dict:
+    try:
+        with open(_GIS_CACHE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_gis_cache(cache: dict) -> None:
+    try:
+        with open(_GIS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+async def geocode_2gis(address: str) -> str | None:
+    """Вернуть РУССКОЕ название района через 2ГИС или None.
+    Проверяет, что город = Батуми (защита от промахов в другие города)."""
+    if not GIS_API_KEY or not address:
+        return None
+    try:
+        url = "https://catalog.api.2gis.com/3.0/items/geocode"
+        params = {
+            "q": f"{address} Батуми Грузия",
+            "fields": "items.adm_div",
+            "key": GIS_API_KEY,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+
+        items = data.get("result", {}).get("items", [])
+        if not items:
+            return None
+
+        adm_div = items[0].get("adm_div", [])
+
+        # Проверка города — должен быть Батуми
+        city = next((x for x in adm_div if x.get("type") == "city"), None)
+        if not city or city.get("name") != "ბათუმი":
+            return None
+
+        district = next((x for x in adm_div if x.get("type") == "district"), None)
+        if not district:
+            return None
+
+        return GEO_TO_RU.get(district.get("name"))
+    except Exception:
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ЯНДЕКС ГЕОКОДЕР — определение района
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -351,20 +460,38 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
         return None, None, None
 
     cached_district = None
+    _addr_norm = normalize_address(address)
+
+    # 1. Ручной кэш district_cache.json — высший приоритет
     try:
-        import os as _os, json as _json
-        _cache_file = _os.path.join(_os.path.dirname(__file__), "district_cache.json")
-        if _os.path.exists(_cache_file):
+        _cache_file = os.path.join(os.path.dirname(__file__), "district_cache.json")
+        if os.path.exists(_cache_file):
             with open(_cache_file, encoding="utf-8") as _f:
-                _cache = _json.load(_f)
+                _cache = json.load(_f)
             _val = _cache.get(address)
             if _val is None:
-                _norm_cache = {normalize_address(k): v for k, v in _cache.items()}
-                _val = _norm_cache.get(normalize_address(address))
+                _val = _cache.get(_addr_norm)
             if _val is not None:
                 cached_district = _val
     except Exception:
         cached_district = None
+
+    # 2. Кэш 2ГИС — если ручной кэш не дал результата
+    gis_district = None
+    if cached_district is None:
+        _gis_cache = _load_gis_cache()
+        if _addr_norm in _gis_cache:
+            # Адрес уже запрашивали (значение может быть None — тоже кэш)
+            gis_district = _gis_cache[_addr_norm]
+        else:
+            # Адрес не запрашивали → зовём API если лимит не исчерпан
+            if _gis_calls_today() < GIS_DAILY_LIMIT:
+                gis_district = await geocode_2gis(address)
+                _gis_increment()
+                _gis_cache[_addr_norm] = gis_district
+                _save_gis_cache(_gis_cache)
+            else:
+                gis_district = None  # дневной лимит исчерпан, fallback на rapidfuzz
 
     address_full = address
     address_full = re.sub(r'\bул\.\s*', 'улица ', address_full)
@@ -387,13 +514,13 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
-                    return cached_district or find_district_by_street(None, address), None, None
+                    return cached_district or gis_district or find_district_by_street(None, address), None, None
                 data = await resp.json()
 
         collection = data["response"]["GeoObjectCollection"]
         members = collection.get("featureMember", [])
         if not members:
-            return cached_district or find_district_by_street(None, address), None, None
+            return cached_district or gis_district or find_district_by_street(None, address), None, None
 
         geo = members[0]["GeoObject"]
 
@@ -414,12 +541,13 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
                 street = comp.get("name")
                 break
 
-        # Определяем район по улице (кэш имеет приоритет над rapidfuzz)
-        district = cached_district or find_district_by_street(street, address)
+        # Определяем район: ручной кэш → 2ГИС → rapidfuzz
+        district = cached_district or gis_district or find_district_by_street(street, address)
 
         import logging as _logging
         _logging.getLogger(__name__).info(
-            f"[geocode] street={street!r} → district={district!r} (cached={cached_district!r}) | lat={lat} lon={lon}"
+            f"[geocode] street={street!r} → district={district!r} "
+            f"(manual={cached_district!r} gis={gis_district!r}) | lat={lat} lon={lon}"
         )
 
         return district, lat, lon
@@ -427,7 +555,7 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
     except Exception as e:
         import logging as _logging
         _logging.getLogger(__name__).error(f"[geocode] Ошибка: {e}")
-        return cached_district or find_district_by_street(None, address), None, None
+        return cached_district or gis_district or find_district_by_street(None, address), None, None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
