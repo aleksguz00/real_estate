@@ -473,7 +473,8 @@ async def fix_district_set(callback: CallbackQuery, state: FSMContext):
             cache = json.load(f)
     except Exception:
         cache = {}
-    cache[address] = district
+    from utils import normalize_address
+    cache[normalize_address(address)] = district
     with open(cache_file, "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False, indent=2)
 

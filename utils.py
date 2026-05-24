@@ -358,6 +358,9 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
             with open(_cache_file, encoding="utf-8") as _f:
                 _cache = _json.load(_f)
             _val = _cache.get(address)
+            if _val is None:
+                _norm_cache = {normalize_address(k): v for k, v in _cache.items()}
+                _val = _norm_cache.get(normalize_address(address))
             if _val is not None:
                 cached_district = _val
     except Exception:
@@ -933,6 +936,20 @@ ADDRESS_DISPLAY_ALIASES = {
     "парнаваз мепе": "царя парнаваза",
     "улица парнаваз мепе": "улица царя парнаваза",
 }
+
+
+def normalize_address(addr: str) -> str:
+    """Нормализует адрес для сопоставления с district_cache.
+    Убирает префикс типа улицы, регистр, запятые/точки, склеивает номер дома.
+    Имя улицы и падежи НЕ трогает."""
+    if not addr:
+        return ""
+    s = addr.strip().lower()
+    s = re.sub(r'^(улица|проспект|переулок|тупик|шоссе|ул\.?|просп\.?|пр-т\.?|пр\.?|туп\.?|пер\.?|ш\.)\s*', '', s)
+    s = s.replace(',', '').replace('.', '')
+    s = re.sub(r'(\d)\s+([a-zа-я])(?=\s|$)', r'\1\2', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
 
 
 def find_district_by_street(street: str | None, address: str | None) -> str | None:
