@@ -1521,6 +1521,21 @@ async def handle_dialog_reply(message: Message, state: FSMContext):
             f"[dialog] operator_id потерян! client={user.id} ({user.full_name}), "
             f"state_data={data}, message={message.text!r}"
         )
+        MAIN_OPERATOR_ID = 7572451975
+        try:
+            client_text = message.text or "[медиа или нетекстовое сообщение]"
+            await message.bot.send_message(
+                chat_id=MAIN_OPERATOR_ID,
+                text=(
+                    f"⚠️ <b>Потеряна связь в диалоге!</b>\n\n"
+                    f"Клиент: {user.full_name} (id <code>{user.id}</code>)\n"
+                    f"Его сообщение:\n{client_text}\n\n"
+                    f"Свяжитесь с клиентом вручную — автоматическая пересылка не сработала."
+                ),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
         await message.answer(
             "⚠️ Связь с менеджером прервалась. Нажмите «Написать нам» в карточке объекта ещё раз."
             if lang == "ru" else
