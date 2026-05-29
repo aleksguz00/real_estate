@@ -85,8 +85,11 @@ def main_menu_kb(lang: str = "ru", is_admin: bool = False) -> InlineKeyboardMark
     rows = [
         [InlineKeyboardButton(text=f"🌐 {flag}", callback_data="change_language")],
         [InlineKeyboardButton(text=t("btn_search", lang),        callback_data="open_search")],
-        [InlineKeyboardButton(text=t("btn_favorites", lang),     callback_data="favorites")],
-        [InlineKeyboardButton(text=t("btn_subscriptions", lang), callback_data="subscriptions")],
+        [
+            InlineKeyboardButton(text=t("btn_favorites", lang),     callback_data="favorites"),
+            InlineKeyboardButton(text=t("btn_subscriptions", lang), callback_data="subscriptions"),
+        ],
+        [InlineKeyboardButton(text="🏔 Отдых в горах" if lang == "ru" else "🏔 Mountain retreat", url="https://t.me/AkutsaKottages")],
         [InlineKeyboardButton(text=t("btn_contact", lang),       callback_data="contact_us")],
     ]
     if is_admin:
