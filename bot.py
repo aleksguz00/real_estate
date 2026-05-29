@@ -48,7 +48,13 @@ async def main():
     @dp.error()
     async def errors_handler(event: ErrorEvent):
         import traceback
+        from aiogram.exceptions import TelegramBadRequest
         exception = event.exception
+        # "message is not modified" — нормальное поведение Telegram при повторных тапах
+        # по тем же кнопкам. Не шлём оператору, только в DEBUG-лог.
+        if isinstance(exception, TelegramBadRequest) and "message is not modified" in str(exception):
+            logger.debug(f"Telegram not modified (suppressed): {exception}")
+            return True
         error_msg = f"❌ Ошибка в боте:\n\n{type(exception).__name__}: {str(exception)[:500]}"
         logger.error(f"Bot error: {exception}\n{traceback.format_exc()}")
         try:
