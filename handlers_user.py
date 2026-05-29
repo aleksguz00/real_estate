@@ -1516,14 +1516,25 @@ async def handle_dialog_reply(message: Message, state: FSMContext):
     user = message.from_user
 
     if not operator_id:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"[dialog] operator_id потерян! client={user.id} ({user.full_name}), "
+            f"state_data={data}, message={message.text!r}"
+        )
+        await message.answer(
+            "⚠️ Связь с менеджером прервалась. Нажмите «Написать нам» в карточке объекта ещё раз."
+            if lang == "ru" else
+            "⚠️ Connection with manager lost. Please press 'Contact us' in the listing again."
+        )
         await state.set_state(None)
         return
 
+    client_text = message.text or "[медиа или нетекстовое сообщение]"
     await message.bot.send_message(
         chat_id=operator_id,
         text=(
             f"💬 <b>Ответ клиента {user.full_name}:</b>\n\n"
-            f"{message.text}"
+            f"{client_text}"
         ),
         parse_mode="HTML",
     )
