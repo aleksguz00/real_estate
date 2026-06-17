@@ -539,3 +539,19 @@ async def get_user_info(telegram_id: int) -> dict:
 async def log_to_sheets(telegram_id: int, property_id: int, data: dict):
     # TODO: подключить gspread
     print(f"[Sheets] user={telegram_id} prop={property_id} data={data}")
+
+
+# ---------------------------------------------------------------------------
+# Search by source_code
+# ---------------------------------------------------------------------------
+
+async def get_property_by_source_code(code: str):
+    ru_to_en = str.maketrans("АВЕКМНОРСТУХ", "ABEKMHOPCTYX")
+    norm = code.strip().upper().replace(" ", "").translate(ru_to_en)
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            "SELECT * FROM properties "
+            "WHERE UPPER(REPLACE(source_code,' ','')) = $1 AND is_active=TRUE "
+            "ORDER BY message_id DESC LIMIT 1",
+            norm
+        )

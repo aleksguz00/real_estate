@@ -1991,6 +1991,37 @@ async def show_property_card(message, state: FSMContext, prop, current: int, tot
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ПОИСК ПО КОДУ ОБЪЕКТА (только для админов)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "search_by_code")
+async def search_by_code_start(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        await callback.answer("Только для админов", show_alert=True)
+        return
+    await state.set_state(FilterState.waiting_code_search)
+    await callback.answer()
+    await callback.message.answer("🔢 Введите код объекта (например 2695AK) 👇")
+
+
+@router.message(FilterState.waiting_code_search)
+async def search_by_code_input(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    from db import get_property_by_source_code
+    code = message.text.strip()
+    prop = await get_property_by_source_code(code)
+    await state.set_state(None)
+    data = await state.get_data()
+    lang = data.get("lang", "ru")
+    if not prop:
+        await message.answer(f"❌ Объект с кодом {code} не найден")
+        return
+    await state.update_data(search_results=[prop["id"]], search_index=0)
+    await show_property_card(message, state, prop, 1, 1, lang)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # НАВИГАЦИЯ ПО КАРТОЧКАМ
 # ─────────────────────────────────────────────────────────────────────────────
 

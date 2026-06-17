@@ -22,6 +22,8 @@ class FilterState(StatesGroup):
     waiting_contact_message   = State()
     waiting_phone_for_contact = State()
     in_dialog                 = State()
+    # Поиск по коду
+    waiting_code_search = State()
     # Бинго
     bingo_game = State()
 

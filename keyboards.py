@@ -95,6 +95,12 @@ def main_menu_kb(lang: str = "ru", is_admin: bool = False) -> InlineKeyboardMark
     if is_admin:
         rows.append([
             InlineKeyboardButton(
+                text="🔢 Поиск по номеру" if lang == "ru" else "🔢 Search by code",
+                callback_data="search_by_code",
+            ),
+        ])
+        rows.append([
+            InlineKeyboardButton(
                 text="📝 Просмотр" if lang == "ru" else "📝 Viewing",
                 callback_data="admin_add_viewing",
             ),
