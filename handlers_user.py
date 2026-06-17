@@ -204,6 +204,10 @@ async def change_language(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "main_menu")
 async def main_menu_handler(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
+    # Сбрасываем фильтры поиска, сохраняя язык и user_id
+    data = await state.get_data()
+    keep = {k: data[k] for k in ("lang", "user_id") if k in data}
+    await state.set_data(keep)
     await callback.answer()
     await _show_main_menu(callback.message, state, edit=True)
 
