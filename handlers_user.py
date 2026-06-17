@@ -1460,10 +1460,17 @@ async def handle_contact_message(message: Message, state: FSMContext):
         async with pool.acquire() as conn:
             prop = await conn.fetchrow("SELECT * FROM properties WHERE id=$1", int(prop_id))
 
+    nav_row = [
+        InlineKeyboardButton(text="🔍 Поиск", callback_data="open_search"),
+        InlineKeyboardButton(text="🏠 Меню", callback_data="main_menu"),
+    ]
+    nav_kb = InlineKeyboardMarkup(inline_keyboard=[nav_row])
+
     for op_id in OPERATOR_IDS:
         await message.bot.send_message(
             chat_id=op_id,
             text=staff_text,
+            reply_markup=nav_kb if not prop else None,
             disable_notification=True,
         )
 
@@ -1494,6 +1501,7 @@ async def handle_contact_message(message: Message, state: FSMContext):
                         callback_data=f"op_check_{prop_id}",
                     ),
                 ],
+                nav_row,
             ])
             await message.bot.send_message(
                 chat_id=op_id,
