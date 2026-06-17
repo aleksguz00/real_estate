@@ -2011,13 +2011,14 @@ async def search_by_code_input(message: Message, state: FSMContext):
     from db import get_property_by_source_code
     code = message.text.strip()
     prop = await get_property_by_source_code(code)
-    await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
     if not prop:
-        await message.answer(f"❌ Объект с кодом {code} не найден")
+        await message.answer(f"❌ Объект с кодом {code} не найден.\nВведите другой код или нажмите 🏠 Меню для выхода.")
         return
     await state.update_data(search_results=[prop["id"]], search_index=0)
+    if not prop["is_active"]:
+        await message.answer("⚠️ <b>Объект неактивен</b> (сдан или снят с публикации). Показан для справки.", parse_mode="HTML")
     await show_property_card(message, state, prop, 1, 1, lang)
 
 

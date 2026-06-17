@@ -551,7 +551,7 @@ async def get_property_by_source_code(code: str):
     async with pool.acquire() as conn:
         return await conn.fetchrow(
             "SELECT * FROM properties "
-            "WHERE UPPER(REPLACE(source_code,' ','')) = $1 AND is_active=TRUE "
+            "WHERE UPPER(REPLACE(source_code,' ','')) = $1 "
             "ORDER BY message_id DESC LIMIT 1",
             norm
         )
