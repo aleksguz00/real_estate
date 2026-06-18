@@ -554,7 +554,8 @@ async def op_reply_start(callback: CallbackQuery, state: FSMContext):
             text=label,
             callback_data=f"op_tpl_{i}_{client_id}_{prop_id}",
         )]
-        for i, (label, _) in enumerate(templates)
+        for i, (label, text) in enumerate(templates)
+        if not (prop_id == 0 and text == "CONFIRM_VIEWING")
     ])
     await callback.answer()
     await callback.message.answer(

@@ -1469,12 +1469,16 @@ async def handle_contact_message(message: Message, state: FSMContext):
         InlineKeyboardButton(text="🏠 Меню", callback_data="main_menu"),
     ]
     nav_kb = InlineKeyboardMarkup(inline_keyboard=[nav_row])
+    no_prop_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Ответить клиенту", callback_data=f"op_reply_{user.id}_0")],
+        nav_row,
+    ])
 
     for op_id in OPERATOR_IDS:
         await message.bot.send_message(
             chat_id=op_id,
             text=staff_text,
-            reply_markup=nav_kb if not prop else None,
+            reply_markup=no_prop_kb if not prop else None,
             disable_notification=True,
         )
 
