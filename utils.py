@@ -106,13 +106,23 @@ def detect_rooms(text: str) -> str | None:
 
 def detect_source_code(text: str) -> str | None:
     """Извлечь код объекта (например 2336АК или 554РК)."""
-    # Ищем код в конце строк с хэштегами или в конце текста
-    match = re.search(r"\b(\d*[А-ЯA-Z]{2,3})\s*$", text.strip(), re.MULTILINE)
-    if match:
-        code = match.group(1)
-        # Код должен содержать буквы АК или РК
-        if re.search(r"[АA][КK]|[РP][КK]", code, re.IGNORECASE):
-            return code
+    if not text:
+        return None
+    t = text.strip()
+    AK_RK = re.compile(r"[АA][КK]|[РP][КK]", re.IGNORECASE)
+
+    # Новый формат: код первой строкой, возможно в **жирном** или с суффиксами
+    # Примеры: "338AK**", "**314Ak", "378AKR-", "272Ak"
+    first_line = t.split('\n')[0].upper()
+    m = re.search(r'\d+[A-ZА-Я]{2,3}', first_line)
+    if m and AK_RK.search(m.group(0)):
+        return m.group(0)
+
+    # Старый формат: код в конце строки
+    m = re.search(r"\b(\d*[А-ЯA-Z]{2,3})\s*$", t, re.MULTILINE)
+    if m and AK_RK.search(m.group(1)):
+        return m.group(1)
+
     return None
 
 
