@@ -114,6 +114,10 @@ def detect_source_code(text: str) -> str | None:
     # Новый формат: код первой строкой, возможно в **жирном** или с суффиксами
     # Примеры: "338AK**", "**314Ak", "378AKR-", "272Ak"
     first_line = t.split('\n')[0].upper()
+    first_line_nospace = first_line.replace(' ', '')
+    # Мёртвый формат: AK/РК с цифрой сразу после (105AK2, 7АК3) — не извлекаем
+    if re.search(r'[АA][КK][0-9]|[РP][КK][0-9]', first_line_nospace):
+        return None
     m = re.search(r'\d+[A-ZА-Я]{2,3}', first_line)
     if m and AK_RK.search(m.group(0)):
         return m.group(0)
