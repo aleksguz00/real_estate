@@ -127,6 +127,11 @@ def detect_source_code(text: str) -> str | None:
     if m and AK_RK.search(m.group(1)):
         return m.group(1)
 
+    # Новый формат: "ID: 2695AK ⭐⭐⭐" — код в строке ID: (в конце поста)
+    m = re.search(r'ID[:\s]+(\d+[A-ZА-Я]{2,3})(?![0-9A-ZА-Я])', t.upper())
+    if m and AK_RK.search(m.group(1)):
+        return m.group(1)
+
     return None
 
 
