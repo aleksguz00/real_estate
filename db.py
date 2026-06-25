@@ -153,6 +153,25 @@ async def save_property(data: dict) -> int:
         )
 
 
+async def deactivate_old_duplicates(source_channel: int, source_code: str, keep_message_id: int) -> int:
+    """Деактивировать старые версии объекта с тем же (channel, source_code) и меньшим message_id.
+    Вызывается после save_property когда пришла свежая версия поста (переиздание).
+    Возвращает число деактивированных строк."""
+    if not source_code:
+        return 0
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """UPDATE properties SET is_active=FALSE, updated_at=NOW()
+               WHERE source_channel=$1 AND source_code=$2
+                 AND message_id < $3 AND is_active=TRUE""",
+            source_channel, source_code, keep_message_id
+        )
+        try:
+            return int(result.split()[-1])
+        except Exception:
+            return 0
+
+
 async def update_property_geocode(prop_id: int, district: str | None, lat: float | None, lon: float | None):
     async with pool.acquire() as conn:
         await conn.execute(

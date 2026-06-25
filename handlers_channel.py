@@ -183,6 +183,15 @@ class ChannelParser:
             prop_id = await save_property(data)
             logger.info(f"✅ Объект #{prop_id} сохранён [{data.get('source_code', '')}]")
 
+            # Защита от дублей: новая версия поста гасит старые версии того же объекта
+            if data.get("source_code") and data.get("is_active", True):
+                from db import deactivate_old_duplicates
+                killed = await deactivate_old_duplicates(
+                    data["source_channel"], data["source_code"], data["message_id"]
+                )
+                if killed:
+                    logger.info(f"🔄 Деактивировано {killed} старых дублей для {data['source_code']}")
+
             # Автоматическое геокодирование
             if data.get("address") and not data.get("lat"):
                 try:
