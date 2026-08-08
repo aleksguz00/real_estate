@@ -308,6 +308,9 @@ async def fresh_manual_input(message: Message, state: FSMContext):
         val = int(message.text.strip())
         if val <= 0:
             raise ValueError
+        # клиент: молча обрезаем до 60 (у операторов без ограничения)
+        if message.from_user.id not in OPERATOR_IDS:
+            val = min(val, 60)
         await state.update_data(fresh=f"fresh_{val}", fresh_label=f"📅 {val} дней")
         await message.delete()
         await state.set_state(None)
@@ -1066,14 +1069,20 @@ def build_filters_from_state(data: dict, telegram_id: int = None) -> dict:
     fresh = data.get("fresh", "")
     if fresh:
         days_match = re.search(r"(\d+)", fresh)
-        if days_match:
-            filters["days_depth"] = int(days_match.group(1))
+        days_val = int(days_match.group(1)) if days_match else None
     else:
-        effective_id = telegram_id or data.get("user_id")
-        if effective_id and effective_id in OPERATOR_IDS:
-            pass
-        else:
-            filters["days_depth"] = 30
+        days_val = None
+
+    effective_id = telegram_id or data.get("user_id")
+    is_operator = bool(effective_id and effective_id in OPERATOR_IDS)
+
+    if is_operator:
+        if days_val is not None:
+            filters["days_depth"] = days_val    # операторам без обрезки
+        # иначе — без ограничения
+    else:
+        # клиент: дефолт 30, ручной максимум 60 (молча обрезаем)
+        filters["days_depth"] = min(days_val, 60) if days_val is not None else 30
 
     return filters
 
