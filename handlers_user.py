@@ -464,7 +464,8 @@ async def filter_type(callback: CallbackQuery, state: FSMContext):
     lang = data.get("lang", "ru")
     await state.set_state(FilterState.choosing_type)
     await callback.message.edit_reply_markup(
-        reply_markup=deal_type_kb(data.get("deal_type"), data.get("prop_types", []), lang)
+        reply_markup=deal_type_kb(data.get("deal_type"), data.get("prop_types", []), lang,
+                                  data.get("frame_only", False))
     )
     await callback.answer()
 
@@ -473,10 +474,27 @@ async def filter_type(callback: CallbackQuery, state: FSMContext):
 async def set_deal(callback: CallbackQuery, state: FSMContext):
     deal = callback.data.replace("deal_", "")
     await state.update_data(deal_type=deal, budget=None, budget_label=None, budgets=[])
+    if deal == "rent":
+        # каркас — признак только для продажи, иначе фильтр молча отсечёт всю аренду
+        await state.update_data(frame_only=False)
     data = await state.get_data()
     lang = data.get("lang", "ru")
     await callback.message.edit_reply_markup(
-        reply_markup=deal_type_kb(deal, data.get("prop_types", []), lang)
+        reply_markup=deal_type_kb(deal, data.get("prop_types", []), lang,
+                                  data.get("frame_only", False))
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "filter_frame_toggle")
+async def filter_frame_toggle(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    new_val = not data.get("frame_only", False)
+    await state.update_data(frame_only=new_val)
+    data = await state.get_data()
+    lang = data.get("lang", "ru")
+    await callback.message.edit_reply_markup(
+        reply_markup=deal_type_kb(data.get("deal_type"), data.get("prop_types", []), lang, new_val)
     )
     await callback.answer()
 
@@ -496,7 +514,8 @@ async def set_prop_type(callback: CallbackQuery, state: FSMContext):
         await state.update_data(prop_types=selected)
         data = await state.get_data()
         await callback.message.edit_reply_markup(
-            reply_markup=deal_type_kb(data.get("deal_type"), selected, lang)
+            reply_markup=deal_type_kb(data.get("deal_type"), selected, lang,
+                                      data.get("frame_only", False))
         )
     else:
         if prop in selected:
@@ -507,7 +526,8 @@ async def set_prop_type(callback: CallbackQuery, state: FSMContext):
         data = await state.get_data()
         lang = data.get("lang", "ru")
         await callback.message.edit_reply_markup(
-            reply_markup=deal_type_kb(data.get("deal_type"), selected, lang)
+            reply_markup=deal_type_kb(data.get("deal_type"), selected, lang,
+                                      data.get("frame_only", False))
         )
     await callback.answer()
 
@@ -1039,6 +1059,9 @@ def build_filters_from_state(data: dict, telegram_id: int = None) -> dict:
         filters["heating"] = [
             _HEATING_TO_DB.get(h.lower(), h.lower()) for h in data["heating"]
         ]
+
+    if data.get("frame_only"):
+        filters["frame_only"] = True
 
     # Бюджет — разбираем диапазон
     budgets = data.get("budgets", [])

@@ -280,6 +280,9 @@ async def get_property_ids(filters: dict) -> list[int]:
         params.append(filters["features"])
         i += 1
 
+    if filters.get("frame_only"):
+        conditions.append("subtype IS NOT NULL")
+
     where = " AND ".join(conditions)
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -383,6 +386,9 @@ async def get_properties(filters: dict, offset: int = 0, limit: int = 10) -> lis
         conditions.append(f"features && ${i}::text[]")
         params.append(filters["features"])
         i += 1
+
+    if filters.get("frame_only"):
+        conditions.append("subtype IS NOT NULL")
 
     where = " AND ".join(conditions)
     params.extend([limit, offset])

@@ -231,7 +231,8 @@ def area_kb(lang: str = "ru") -> InlineKeyboardMarkup:
 # ТИП СДЕЛКИ И ОБЪЕКТА
 # ─────────────────────────────────────────────────────────────────────────────
 
-def deal_type_kb(selected_deal: str | None = None, selected_props: list | None = None, lang: str = "ru") -> InlineKeyboardMarkup:
+def deal_type_kb(selected_deal: str | None = None, selected_props: list | None = None, lang: str = "ru",
+                 selected_frame: bool = False) -> InlineKeyboardMarkup:
     if selected_props is None:
         selected_props = []
 
@@ -252,13 +253,18 @@ def deal_type_kb(selected_deal: str | None = None, selected_props: list | None =
             row.append(InlineKeyboardButton(text=f"{mark}{t(text_key, lang)}", callback_data=f"prop_{key}"))
         prop_rows.append(row)
 
-    return InlineKeyboardMarkup(inline_keyboard=[
-        deal_row, *prop_rows,
-        [
-            InlineKeyboardButton(text=t("btn_back", lang), callback_data="back_to_search"),
-            InlineKeyboardButton(text=t("btn_done", lang), callback_data="prop_done"),
-        ],
+    rows = [deal_row, *prop_rows]
+
+    # Каркас — только для продажи (у аренды состояния "каркас" не бывает)
+    if selected_deal == "sale":
+        frame_label = ("✅ " if selected_frame else "") + t("btn_frame_only", lang)
+        rows.append([InlineKeyboardButton(text=frame_label, callback_data="filter_frame_toggle")])
+
+    rows.append([
+        InlineKeyboardButton(text=t("btn_back", lang), callback_data="back_to_search"),
+        InlineKeyboardButton(text=t("btn_done", lang), callback_data="prop_done"),
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 
