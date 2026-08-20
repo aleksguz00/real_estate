@@ -17,3 +17,6 @@ CHANNEL_RENT = int(os.getenv("CHANNEL_RENT"))
 CHANNEL_SALE = int(os.getenv("CHANNEL_SALE"))
 STORAGE_BOT_TOKEN = os.getenv("STORAGE_BOT_TOKEN")
 STORAGE_CHAT_ID = int(os.getenv("STORAGE_CHAT_ID"))
+
+# Telegram ID операторов — без ограничений по глубине поиска
+OPERATOR_IDS = [7572451975, 8154802423]

@@ -17,6 +17,7 @@ from keyboards import (
     PRICE_RANGES_RENT, PRICE_RANGES_SALE, FRESHNESS_OPTIONS,
 )
 from locales import t, tl
+from config import OPERATOR_IDS       # единый источник — config.py
 from filters_fsm import FilterState, AdminState
 from db import save_user, is_admin
 
@@ -28,7 +29,6 @@ _CHANNEL_REF = re.compile(r"^-?\d+:\d+$")
 WELCOME_PHOTO = "AgACAgIAAxkBAAMEagABg71fc1ExG3RhJ3jbzg3TAVwpAAKDFmsbKeAAAUhmegdxqjckJQEAAwIAA3gAAzsE"
 CHANNEL_USERNAME = "BatumiHome24"
 CHANNEL_URL = "https://t.me/BatumiHome24"
-OPERATOR_IDS = [7572451975, 8154802423]
 
 
 async def get_lang(state: FSMContext) -> str:
@@ -224,7 +224,7 @@ async def open_search(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer(
         t("search_title", lang),
-        reply_markup=search_dashboard_kb(data, lang),
+        reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id),
         disable_notification=True,
     )
 
@@ -234,7 +234,7 @@ async def back_to_search(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -243,7 +243,7 @@ async def filter_reset(callback: CallbackQuery, state: FSMContext):
     lang = (await state.get_data()).get("lang", "ru")
     await state.clear()
     await state.update_data(lang=lang)
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb({}))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb({}, telegram_id=callback.from_user.id))
     await callback.answer(t("cleared", lang))
 
 
@@ -283,7 +283,7 @@ async def set_fresh(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -299,7 +299,7 @@ async def skip_fresh(callback: CallbackQuery, state: FSMContext):
         await callback.bot.edit_message_reply_markup(
             chat_id=callback.message.chat.id,
             message_id=bot_msg_id,
-            reply_markup=search_dashboard_kb(data, lang),
+            reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id),
         )
     await callback.answer()
 
@@ -325,7 +325,7 @@ async def fresh_manual_input(message: Message, state: FSMContext):
             await message.bot.edit_message_reply_markup(
                 chat_id=message.chat.id,
                 message_id=bot_msg_id,
-                reply_markup=search_dashboard_kb(data, lang),
+                reply_markup=search_dashboard_kb(data, lang, telegram_id=message.from_user.id),
             )
     except ValueError:
         await message.answer("⚠️ Введите число, например: 21", disable_notification=True)
@@ -375,7 +375,7 @@ async def back_from_rooms(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -392,7 +392,7 @@ async def set_area(callback: CallbackQuery, state: FSMContext):
         await state.update_data(area_from=None)
         await state.set_state(None)
         data = await state.get_data()
-        await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+        await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     elif val == "manual":
         await state.set_state(FilterState.area_manual_input)
         await state.update_data(bot_msg_id=callback.message.message_id)
@@ -406,7 +406,7 @@ async def set_area(callback: CallbackQuery, state: FSMContext):
         await state.update_data(area_from=int(val))
         await state.set_state(None)
         data = await state.get_data()
-        await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+        await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -431,7 +431,7 @@ async def skip_area(callback: CallbackQuery, state: FSMContext):
         await callback.bot.edit_message_reply_markup(
             chat_id=callback.message.chat.id,
             message_id=bot_msg_id,
-            reply_markup=search_dashboard_kb(data, lang),
+            reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id),
         )
     await callback.answer()
 
@@ -452,7 +452,7 @@ async def area_manual_input(message: Message, state: FSMContext):
             await message.bot.edit_message_reply_markup(
                 chat_id=message.chat.id,
                 message_id=bot_msg_id,
-                reply_markup=search_dashboard_kb(data, lang),
+                reply_markup=search_dashboard_kb(data, lang, telegram_id=message.from_user.id),
             )
     except ValueError:
         await message.answer(t("error_number", lang), disable_notification=True)
@@ -542,7 +542,7 @@ async def prop_done(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -551,7 +551,7 @@ async def back_from_type(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -586,7 +586,7 @@ async def skip_address_btn(callback: CallbackQuery, state: FSMContext):
         await callback.bot.edit_message_reply_markup(
             chat_id=callback.message.chat.id,
             message_id=bot_msg_id,
-            reply_markup=search_dashboard_kb(data, lang),
+            reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id),
         )
     await callback.answer()
 
@@ -612,7 +612,7 @@ async def set_address(message: Message, state: FSMContext):
         await message.bot.edit_message_reply_markup(
             chat_id=message.chat.id,
             message_id=bot_msg_id,
-            reply_markup=search_dashboard_kb(data, lang),
+            reply_markup=search_dashboard_kb(data, lang, telegram_id=message.from_user.id),
         )
 
 
@@ -649,7 +649,7 @@ async def district_done(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -658,7 +658,7 @@ async def back_from_district(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -722,7 +722,7 @@ async def skip_budget(callback: CallbackQuery, state: FSMContext):
         await callback.bot.edit_message_reply_markup(
             chat_id=callback.message.chat.id,
             message_id=bot_msg_id,
-            reply_markup=search_dashboard_kb(data, lang),
+            reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id),
         )
     await callback.answer()
 
@@ -770,7 +770,7 @@ async def budget_manual_input(message: Message, state: FSMContext):
         await message.bot.edit_message_reply_markup(
             chat_id=message.chat.id,
             message_id=bot_msg_id,
-            reply_markup=search_dashboard_kb(data, lang),
+            reply_markup=search_dashboard_kb(data, lang, telegram_id=message.from_user.id),
         )
 
 
@@ -787,7 +787,7 @@ async def budget_done(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -796,7 +796,7 @@ async def back_from_budget(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -833,7 +833,7 @@ async def features_done(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -842,7 +842,7 @@ async def back_from_features(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -879,7 +879,7 @@ async def heating_done(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -888,7 +888,7 @@ async def back_from_heating(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang))
+    await callback.message.edit_reply_markup(reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -1687,7 +1687,7 @@ async def admin_search(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
     lang = data.get("lang", "ru")
-    await callback.message.answer("🔍 Подбор объектов для клиента:", reply_markup=search_dashboard_kb(data, lang), disable_notification=True)
+    await callback.message.answer("🔍 Подбор объектов для клиента:", reply_markup=search_dashboard_kb(data, lang, telegram_id=callback.from_user.id), disable_notification=True)
 
 
 @router.callback_query(F.data == "admin_stats")

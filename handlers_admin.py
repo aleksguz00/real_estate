@@ -505,7 +505,7 @@ async def fix_district_set(callback: CallbackQuery, state: FSMContext):
 
 @router.message(Command("fetch_sale"))
 async def fetch_sale_history(message: Message):
-    from handlers_user import OPERATOR_IDS
+    from config import OPERATOR_IDS
     if message.from_user.id not in OPERATOR_IDS:
         return
 

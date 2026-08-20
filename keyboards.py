@@ -4,6 +4,7 @@ import re
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from locales import t, tl
+from config import OPERATOR_IDS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -50,12 +51,16 @@ DEPTH_DEFAULT_RENT = 30
 DEPTH_DEFAULT_SALE = 90
 
 
-def depth_days(data: dict) -> int:
-    """Сколько дней показывает кнопка «Не старше»: выбранное или дефолт по сделке."""
+def depth_days(data: dict, is_operator: bool = False) -> int | None:
+    """Сколько дней показывает кнопка «Не старше»: выбранное или дефолт по сделке.
+    Для оператора без явного выбора — None: глубина не ограничивается (см.
+    build_filters_from_state), кнопка рисует «∞»."""
     fresh = data.get("fresh") or ""
     m = re.search(r"(\d+)", fresh)
     if m:
         return int(m.group(1))
+    if is_operator:
+        return None
     return DEPTH_DEFAULT_SALE if data.get("deal_type") == "sale" else DEPTH_DEFAULT_RENT
 
 BINGO_ITEMS_KEY = "bingo_items"
@@ -138,7 +143,8 @@ def main_menu_kb(lang: str = "ru", is_admin: bool = False) -> InlineKeyboardMark
 # ПОИСК — ДАШБОРД
 # ─────────────────────────────────────────────────────────────────────────────
 
-def search_dashboard_kb(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
+def search_dashboard_kb(data: dict, lang: str = "ru",
+                        telegram_id: int | None = None) -> InlineKeyboardMarkup:
     rooms_raw = data.get("rooms", [])
     if isinstance(rooms_raw, str):
         rooms_raw = [rooms_raw]
@@ -152,7 +158,11 @@ def search_dashboard_kb(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     budget   = data.get("budget_label") or "——"
     features = len(data.get("features", []))
     heating  = len(data.get("heating", []))
-    fresh    = depth_days(data)
+    is_op    = bool(telegram_id and telegram_id in OPERATOR_IDS)
+    depth    = depth_days(data, is_op)
+    fresh_lbl = f"{t('btn_not_older', lang)}: " + (
+        "∞" if depth is None else f"{depth} {t('days_short', lang)}"
+    )
     address  = data.get("address_label") or "—"
 
     type_label = "—"
@@ -171,8 +181,7 @@ def search_dashboard_kb(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text=f"{t('btn_not_older', lang)}: {fresh} {t('days_short', lang)}",
-                                 callback_data="filter_fresh"),
+            InlineKeyboardButton(text=fresh_lbl, callback_data="filter_fresh"),
             InlineKeyboardButton(text=f"{t('btn_type', lang)}: {type_label}", callback_data="filter_type"),
         ],
         [
