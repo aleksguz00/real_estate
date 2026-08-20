@@ -71,19 +71,22 @@ def detect_deal_and_type(text: str) -> tuple[str, str]:
 
 
 def detect_subtype(text: str) -> str | None:
-    """Определить состояние объекта продажи: чёрный/белый/зелёный каркас.
-    Ищем ТОЛЬКО в первых 3 строках (заголовок + цена) — упоминания в теле
-    поста игнорируем (там каркас может быть не про сам объект)."""
-    head = "\n".join(text.strip().split("\n")[:3]).lower()
-    if "каркас" not in head:
+    """Состояние объекта продажи: чёрный/белый/зелёный каркас.
+    Ищем по всему тексту. Конструкционные упоминания (железобетонный,
+    монолитный, металлический каркас) — не отделка, игнорируем."""
+    t = text.lower()
+    if "каркас" not in t:
         return None
-    if re.search(r"ч[её]рн\w*\s+каркас", head):
+    if re.search(r"ч[её]рн\w*\s+каркас", t):
         return "black_frame"
-    if re.search(r"бел\w*\s+каркас", head):
+    if re.search(r"бел\w*\s+каркас", t):
         return "white_frame"
-    if re.search(r"зел[её]н\w*\s+каркас", head):
+    if re.search(r"зел[её]н\w*\s+каркас", t):
         return "green_frame"
-    return "frame"  # слово есть, цвет не распознан — общий флаг
+    # слово "каркас" есть, но без цвета: если это конструкция — игнор
+    if re.search(r"(железобетон|монолитн|металлич)\w*\s+каркас", t):
+        return None
+    return "frame"
 
 
 def detect_rooms(text: str) -> str | None:
