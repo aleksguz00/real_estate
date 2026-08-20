@@ -896,6 +896,15 @@ async def back_from_heating(callback: CallbackQuery, state: FSMContext):
 # ПОКАЗАТЬ РЕЗУЛЬТАТЫ
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Состояние объекта (каркас) — бывает только у продажи
+SUBTYPE_LABELS = {
+    "black_frame": {"ru": "🏗 Чёрный каркас", "en": "🏗 Black frame"},
+    "white_frame": {"ru": "🏗 Белый каркас",  "en": "🏗 White frame"},
+    "green_frame": {"ru": "🏗 Зелёный каркас", "en": "🏗 Green frame"},
+    "frame":       {"ru": "🏗 Каркас",         "en": "🏗 Frame"},
+}
+
+
 def format_property_card(prop: dict, lang: str = "ru") -> str:
     """Форматировать карточку объекта."""
     lines = []
@@ -939,6 +948,13 @@ def format_property_card(prop: dict, lang: str = "ru") -> str:
     # Цена в сезон
     if prop.get("price_season"):
         lines.append(f"☀️ Цена в сезон: ${prop['price_season']:,}/мес")
+
+    # Состояние (каркас)
+    subtype = prop.get("subtype")
+    if subtype:
+        label = SUBTYPE_LABELS.get(subtype, {}).get(lang) or SUBTYPE_LABELS.get(subtype, {}).get("ru")
+        if label:
+            lines.append(label)
 
     # Удобства
     features = prop.get("features", [])
