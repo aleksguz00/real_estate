@@ -70,6 +70,22 @@ def detect_deal_and_type(text: str) -> tuple[str, str]:
     return deal_type, property_type
 
 
+def detect_subtype(text: str) -> str | None:
+    """Определить состояние объекта продажи: чёрный/белый/зелёный каркас.
+    Ищем ТОЛЬКО в первых 3 строках (заголовок + цена) — упоминания в теле
+    поста игнорируем (там каркас может быть не про сам объект)."""
+    head = "\n".join(text.strip().split("\n")[:3]).lower()
+    if "каркас" not in head:
+        return None
+    if re.search(r"ч[её]рн\w*\s+каркас", head):
+        return "black_frame"
+    if re.search(r"бел\w*\s+каркас", head):
+        return "white_frame"
+    if re.search(r"зел[её]н\w*\s+каркас", head):
+        return "green_frame"
+    return "frame"  # слово есть, цвет не распознан — общий флаг
+
+
 def detect_rooms(text: str) -> str | None:
     """Извлечь количество комнат из первых 5 строк."""
     header = "\n".join(text.strip().split("\n")[:5]).lower()
@@ -1201,6 +1217,7 @@ async def parse_post(text: str) -> dict | None:
 
     # Извлекаем все данные
     deal_type, property_type = detect_deal_and_type(text)
+    subtype = detect_subtype(text) if deal_type == "sale" else None
     rooms = detect_rooms(text)
     source_code = detect_source_code(text)
     price, price_season, deposit = extract_price(text)
@@ -1226,6 +1243,7 @@ async def parse_post(text: str) -> dict | None:
     return {
         "deal_type":     deal_type,
         "property_type": property_type,
+        "subtype":       subtype,
         "rooms":         rooms,
         "source_code":   source_code,
         "price":         price,
