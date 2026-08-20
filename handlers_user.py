@@ -256,7 +256,9 @@ async def filter_fresh(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lang = data.get("lang", "ru")
     await state.set_state(FilterState.choosing_fresh)
-    await callback.message.edit_reply_markup(reply_markup=fresh_kb(data.get("fresh"), lang))
+    await callback.message.edit_reply_markup(
+        reply_markup=fresh_kb(data.get("fresh"), lang, data.get("deal_type"))
+    )
     await callback.answer()
 
 
@@ -308,9 +310,11 @@ async def fresh_manual_input(message: Message, state: FSMContext):
         val = int(message.text.strip())
         if val <= 0:
             raise ValueError
-        # клиент: молча обрезаем до 60 (у операторов без ограничения)
+        # клиент: молча обрезаем (rent 60 / sale 180); у операторов без ограничения
         if message.from_user.id not in OPERATOR_IDS:
-            val = min(val, 60)
+            data_tmp = await state.get_data()
+            cap = 180 if data_tmp.get("deal_type") == "sale" else 60
+            val = min(val, cap)
         await state.update_data(fresh=f"fresh_{val}", fresh_label=f"📅 {val} дней")
         await message.delete()
         await state.set_state(None)
@@ -473,7 +477,8 @@ async def filter_type(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(FilterState.choosing_type, F.data.startswith("deal_"))
 async def set_deal(callback: CallbackQuery, state: FSMContext):
     deal = callback.data.replace("deal_", "")
-    await state.update_data(deal_type=deal, budget=None, budget_label=None, budgets=[])
+    await state.update_data(deal_type=deal, budget=None, budget_label=None, budgets=[],
+                            fresh=None, fresh_label=None)   # глубина — своя для каждой сделки
     if deal == "rent":
         # каркас — признак только для продажи, иначе фильтр молча отсечёт всю аренду
         await state.update_data(frame_only=False)
@@ -1088,13 +1093,17 @@ def build_filters_from_state(data: dict, telegram_id: int = None) -> dict:
     if data.get("price_max") is not None and "price_max" not in filters:
         filters["price_max"] = data["price_max"]
 
-    # Глубина поиска
+    # Глубина поиска (rent: дефолт 30/макс 60; sale: дефолт 90/макс 180)
     fresh = data.get("fresh", "")
     if fresh:
         days_match = re.search(r"(\d+)", fresh)
         days_val = int(days_match.group(1)) if days_match else None
     else:
         days_val = None
+
+    is_sale = data.get("deal_type") == "sale"
+    depth_default = 90 if is_sale else 30
+    depth_max = 180 if is_sale else 60
 
     effective_id = telegram_id or data.get("user_id")
     is_operator = bool(effective_id and effective_id in OPERATOR_IDS)
@@ -1104,8 +1113,7 @@ def build_filters_from_state(data: dict, telegram_id: int = None) -> dict:
             filters["days_depth"] = days_val    # операторам без обрезки
         # иначе — без ограничения
     else:
-        # клиент: дефолт 30, ручной максимум 60 (молча обрезаем)
-        filters["days_depth"] = min(days_val, 60) if days_val is not None else 30
+        filters["days_depth"] = min(days_val, depth_max) if days_val is not None else depth_default
 
     return filters
 

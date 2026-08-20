@@ -1,5 +1,7 @@
 # keyboards.py
 
+import re
+
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from locales import t, tl
 
@@ -30,11 +32,31 @@ PRICE_RANGES_SALE = [
     ("sale_5", "$260K — $380K"),("sale_6", "от $380K"),
 ]
 
-FRESHNESS_OPTIONS = [
+FRESHNESS_OPTIONS_RENT = [
     ("fresh_7",  "depth_7"),
     ("fresh_14", "depth_14"),
     ("fresh_30", "depth_30"),
 ]
+FRESHNESS_OPTIONS_SALE = [
+    ("fresh_30", "depth_30"),
+    ("fresh_60", "depth_60"),
+    ("fresh_90", "depth_90"),
+]
+# общий список — только для поиска подписи по ключу (set_fresh)
+FRESHNESS_OPTIONS = FRESHNESS_OPTIONS_RENT + FRESHNESS_OPTIONS_SALE[1:]
+
+# Глубина по умолчанию, если пользователь ничего не выбрал
+DEPTH_DEFAULT_RENT = 30
+DEPTH_DEFAULT_SALE = 90
+
+
+def depth_days(data: dict) -> int:
+    """Сколько дней показывает кнопка «Не старше»: выбранное или дефолт по сделке."""
+    fresh = data.get("fresh") or ""
+    m = re.search(r"(\d+)", fresh)
+    if m:
+        return int(m.group(1))
+    return DEPTH_DEFAULT_SALE if data.get("deal_type") == "sale" else DEPTH_DEFAULT_RENT
 
 BINGO_ITEMS_KEY = "bingo_items"
 
@@ -130,7 +152,7 @@ def search_dashboard_kb(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
     budget   = data.get("budget_label") or "——"
     features = len(data.get("features", []))
     heating  = len(data.get("heating", []))
-    fresh    = data.get("fresh_label") or "—"
+    fresh    = depth_days(data)
     address  = data.get("address_label") or "—"
 
     type_label = "—"
@@ -149,7 +171,8 @@ def search_dashboard_kb(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text=f"{t('btn_depth', lang)}: {fresh}",    callback_data="filter_fresh"),
+            InlineKeyboardButton(text=f"{t('btn_not_older', lang)}: {fresh} {t('days_short', lang)}",
+                                 callback_data="filter_fresh"),
             InlineKeyboardButton(text=f"{t('btn_type', lang)}: {type_label}", callback_data="filter_type"),
         ],
         [
@@ -178,9 +201,11 @@ def search_dashboard_kb(data: dict, lang: str = "ru") -> InlineKeyboardMarkup:
 # НОВИЗНА
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fresh_kb(selected: str | None = None, lang: str = "ru") -> InlineKeyboardMarkup:
+def fresh_kb(selected: str | None = None, lang: str = "ru",
+             deal_type: str | None = None) -> InlineKeyboardMarkup:
     rows = []
-    for key, label_key in FRESHNESS_OPTIONS:
+    options = FRESHNESS_OPTIONS_SALE if deal_type == "sale" else FRESHNESS_OPTIONS_RENT
+    for key, label_key in options:
         mark = "✅ " if key == selected else ""
         rows.append([InlineKeyboardButton(text=f"{mark}{t(label_key, lang)}", callback_data=f"fresh_{key}")])
     rows.append([InlineKeyboardButton(text=t("btn_manual", lang), callback_data="fresh_manual")])

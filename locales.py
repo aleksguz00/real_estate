@@ -16,7 +16,8 @@ TEXTS = {
 
         # ── Поиск ────────────────────────────────────────────────
         "search_title":      "🔍 Настройте фильтры поиска:",
-        "btn_depth":         "🕐 Глубина",
+        "btn_not_older":     "📅 Не старше",
+        "days_short":        "дн.",
         "btn_type":          "🏙 Тип",
         "btn_rooms":         "🛏 Комнаты",
         "btn_budget":        "💵 Бюджет",
@@ -56,6 +57,8 @@ TEXTS = {
         "depth_7":           "📅 7 дней",
         "depth_14":          "📅 14 дней",
         "depth_30":          "📅 30 дней",
+        "depth_60":          "📅 60 дней",
+        "depth_90":          "📅 90 дней",
         "enter_depth":       "✏️ Введите количество дней, например: 21",
 
         # ── Бюджет ───────────────────────────────────────────────
@@ -145,7 +148,8 @@ TEXTS = {
 
         # ── Search ───────────────────────────────────────────────
         "search_title":      "🔍 Set your search filters:",
-        "btn_depth":         "🕐 Depth",
+        "btn_not_older":     "📅 Not older than",
+        "days_short":        "d",
         "btn_type":          "🏙 Type",
         "btn_rooms":         "🛏 Rooms",
         "btn_budget":        "💵 Budget",
@@ -185,6 +189,8 @@ TEXTS = {
         "depth_7":           "📅 7 days",
         "depth_14":          "📅 14 days",
         "depth_30":          "📅 30 days",
+        "depth_60":          "📅 60 days",
+        "depth_90":          "📅 90 days",
         "enter_depth":       "✏️ Enter number of days, e.g.: 21",
 
         # ── Budget ───────────────────────────────────────────────
