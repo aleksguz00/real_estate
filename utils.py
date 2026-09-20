@@ -490,6 +490,18 @@ async def geocode_2gis(address: str) -> str | None:
 # ЯНДЕКС ГЕОКОДЕР — определение района
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Рамка региона Батуми/Аджария: координаты вне неё — промах геокодера в другой город
+# (порт plausible() из myhome_ss_parser/geo.py)
+_GEO_REGION = (41.0, 42.3, 41.2, 42.7)  # lat_min, lat_max, lon_min, lon_max
+
+
+def _coords_plausible(lat, lon) -> bool:
+    if lat is None or lon is None:
+        return False
+    lat_min, lat_max, lon_min, lon_max = _GEO_REGION
+    return lat_min <= lat <= lat_max and lon_min <= lon <= lon_max
+
+
 async def geocode_address(address: str) -> tuple[str | None, float | None, float | None]:
     """
     Отправить адрес в Яндекс Геокодер.
@@ -567,6 +579,16 @@ async def geocode_address(address: str) -> tuple[str | None, float | None, float
         pos = geo["Point"]["pos"].split()
         lon = float(pos[0])
         lat = float(pos[1])
+
+        # Яндекс игнорирует подсказку «Батуми» на улицах-тёзках (Гамсахурдиа,
+        # Палиашвили и т.п.) и отдаёт Тбилиси/Кутаиси. Район определяется
+        # отдельно и остаётся верным — обнуляем только координаты.
+        if not _coords_plausible(lat, lon):
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                f"[geocode] координаты вне региона, отброшены: {address} -> {lat},{lon}"
+            )
+            lat = lon = None
 
         # Извлекаем название улицы из компонентов
         street = None
