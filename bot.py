@@ -10,7 +10,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import ErrorEvent
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, SINGLE_INSTANCE_CHECK
 from db import init_db
 from handlers_user import router as user_router
 from handlers_admin import router as admin_router
@@ -25,7 +25,11 @@ logger = logging.getLogger(__name__)
 
 
 def check_single_instance():
-    """Проверяет что бот не запущен в другом процессе."""
+    """Проверяет что бот не запущен в другом процессе.
+    Включается только при SINGLE_INSTANCE_CHECK=1: под systemd pgrep видит
+    собственный перезапускаемый процесс и не даёт сервису подняться."""
+    if not SINGLE_INSTANCE_CHECK:
+        return
     import subprocess
     result = subprocess.run(
         ['pgrep', '-f', 'kaufman_estate/bot.py'],

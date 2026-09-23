@@ -18,5 +18,9 @@ CHANNEL_SALE = int(os.getenv("CHANNEL_SALE"))
 STORAGE_BOT_TOKEN = os.getenv("STORAGE_BOT_TOKEN")
 STORAGE_CHAT_ID = int(os.getenv("STORAGE_CHAT_ID"))
 
+# Проверка «бот уже запущен» через pgrep: под systemd ловит собственный
+# перезапуск и роняет сервис, поэтому по умолчанию выключена.
+SINGLE_INSTANCE_CHECK = os.getenv("SINGLE_INSTANCE_CHECK", "0") == "1"
+
 # Telegram ID операторов — без ограничений по глубине поиска
 OPERATOR_IDS = [7572451975, 8154802423]

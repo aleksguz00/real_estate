@@ -22,4 +22,6 @@ Telethon==1.42.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 yarl==1.23.0
-rapidfuzz
+rapidfuzz==3.14.5
+gspread==6.2.1
+google-auth==2.50.0

@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS properties (
     -- Тип сделки и объекта
     deal_type       TEXT,          -- rent / sale
     property_type   TEXT,          -- apartment / house / commercial / studio
-    subtype         TEXT,          -- office / warehouse / hotel / restaurant / beauty / retail
+    subtype         TEXT,          -- состояние объекта продажи: black_frame / white_frame / green_frame / frame / NULL (detect_subtype)
 
     -- Локация
     address         TEXT,          -- Полный адрес из поста (без скобок)
@@ -118,4 +118,16 @@ CREATE TABLE IF NOT EXISTS viewings (
     status           TEXT DEFAULT 'Назначен',
     created_at       TIMESTAMP DEFAULT NOW(),
     UNIQUE (telegram_id, property_id)
+);
+
+-- Напоминания о просмотрах (шлёт reminder_scheduler.check_reminders)
+CREATE TABLE IF NOT EXISTS reminders (
+    id           SERIAL PRIMARY KEY,
+    client_id    BIGINT NOT NULL,          -- telegram_id клиента
+    operator_id  BIGINT NOT NULL,          -- telegram_id оператора
+    prop_id      INTEGER REFERENCES properties(id) ON DELETE SET NULL,
+    viewing_dt   TIMESTAMP,                -- время просмотра (naive, Asia/Tbilisi)
+    reminder_dt  TIMESTAMP,                -- когда напомнить = viewing_dt - N часов
+    reminded     BOOLEAN DEFAULT FALSE,
+    created_at   TIMESTAMP DEFAULT NOW()
 );
